@@ -1,0 +1,194 @@
+[
+  {
+    "id": "sample.ts#<module>@1-1",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "<module>",
+    "kind": "module",
+    "span": {
+      "startLine": 1,
+      "endLine": 1
+    },
+    "code": "import { helper } from './helper'",
+    "structuralRefs": {
+      "calls": [],
+      "imports": ["./helper"]
+    }
+  },
+  {
+    "id": "sample.ts#greet@3-5",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "greet",
+    "kind": "function",
+    "span": {
+      "startLine": 3,
+      "endLine": 5
+    },
+    "code": "export function greet(name: string): string {\n  return helper(name)\n}",
+    "structuralRefs": {
+      "calls": ["helper"],
+      "imports": ["./helper"]
+    }
+  },
+  {
+    "id": "sample.ts#internal@7-9",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "internal",
+    "kind": "function",
+    "span": {
+      "startLine": 7,
+      "endLine": 9
+    },
+    "code": "function internal(): number {\n  return 42\n}",
+    "structuralRefs": {
+      "calls": [],
+      "imports": []
+    }
+  },
+  {
+    "id": "sample.ts#double@11-11",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "double",
+    "kind": "function",
+    "span": {
+      "startLine": 11,
+      "endLine": 11
+    },
+    "code": "export const double = (n: number): number => n * 2",
+    "structuralRefs": {
+      "calls": [],
+      "imports": []
+    }
+  },
+  {
+    "id": "sample.ts#<module>@13-13",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "<module>",
+    "kind": "module",
+    "span": {
+      "startLine": 13,
+      "endLine": 13
+    },
+    "code": "const config = { enabled: true }",
+    "structuralRefs": {
+      "calls": [],
+      "imports": []
+    }
+  },
+  {
+    "id": "sample.ts#Widget@15-17",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "Widget",
+    "kind": "other",
+    "span": {
+      "startLine": 15,
+      "endLine": 17
+    },
+    "code": "export interface Widget {\n  id: string\n}",
+    "structuralRefs": {
+      "calls": [],
+      "imports": []
+    }
+  },
+  {
+    "id": "sample.ts#WidgetOrNull@19-19",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "WidgetOrNull",
+    "kind": "other",
+    "span": {
+      "startLine": 19,
+      "endLine": 19
+    },
+    "code": "type WidgetOrNull = Widget | null",
+    "structuralRefs": {
+      "calls": [],
+      "imports": []
+    }
+  },
+  {
+    "id": "sample.ts#Color@21-24",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "Color",
+    "kind": "other",
+    "span": {
+      "startLine": 21,
+      "endLine": 24
+    },
+    "code": "enum Color {\n  Red,\n  Blue,\n}",
+    "structuralRefs": {
+      "calls": [],
+      "imports": []
+    }
+  },
+  {
+    "id": "sample.ts#Service@26-34",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "Service",
+    "kind": "class",
+    "span": {
+      "startLine": 26,
+      "endLine": 34
+    },
+    "code": "export class Service {\n  constructor(private readonly w: Widget) {}\n  process(): string {\n    return internal().toString()\n  }\n  get id(): string {\n    return this.w.id\n  }\n}",
+    "structuralRefs": {
+      "calls": ["internal", "toString"],
+      "imports": []
+    }
+  },
+  {
+    "id": "sample.ts#Service.constructor@27-27",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "Service.constructor",
+    "kind": "method",
+    "span": {
+      "startLine": 27,
+      "endLine": 27
+    },
+    "code": "constructor(private readonly w: Widget) {}",
+    "structuralRefs": {
+      "calls": [],
+      "imports": []
+    }
+  },
+  {
+    "id": "sample.ts#Service.process@28-30",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "Service.process",
+    "kind": "method",
+    "span": {
+      "startLine": 28,
+      "endLine": 30
+    },
+    "code": "process(): string {\n    return internal().toString()\n  }",
+    "structuralRefs": {
+      "calls": ["internal", "toString"],
+      "imports": []
+    }
+  },
+  {
+    "id": "sample.ts#Service.id@31-33",
+    "path": "sample.ts",
+    "lang": "typescript",
+    "symbol": "Service.id",
+    "kind": "method",
+    "span": {
+      "startLine": 31,
+      "endLine": 33
+    },
+    "code": "get id(): string {\n    return this.w.id\n  }",
+    "structuralRefs": {
+      "calls": [],
+      "imports": []
+    }
+  }
+]

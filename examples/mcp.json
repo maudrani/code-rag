@@ -1,0 +1,13 @@
+{
+  "// note": "Example config to consume code-rag's retrieval MCP from a coding agent (Claude Code / Codex / Cursor). The cost-showcase: the agent uses its own subscription instead of metered API tokens (ADR-006). This is the PRODUCT MCP (committed) — distinct from the kernel process-MCP (gitignored).",
+  "mcpServers": {
+    "code-rag": {
+      "command": "node",
+      "args": ["dist/mcp/server.js"],
+      "env": {
+        "CORPUS_PATH": ".",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+      }
+    }
+  }
+}

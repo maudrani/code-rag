@@ -1,0 +1,42 @@
+# ── Kernel / trinity build-machinery — NEVER shipped (clone-and-run must not depend on it) ──
+.claude/
+_workspace/
+_prep/
+service/
+start-service.sh
+KERNEL_VERSION
+VERSION_MANIFEST
+.enforcement-state
+session.jsonl
+
+# kernel root MCP (checkpoint-evaluator). The PRODUCT retrieval MCP lives in examples/ and IS committed.
+.mcp.json
+
+# kernel minimal CLAUDE.md. A curated one may be committed later; the AI-dev story lives in the README.
+CLAUDE.md
+
+# ── Dependencies / build output ──
+node_modules/
+dist/
+build/
+coverage/
+
+# ── Env / secrets ──
+.env
+.env.*
+!.env.example
+
+# ── Local data: index DB + model cache (transformers.js ONNX download) ──
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.cache/
+models/
+data/
+
+# ── OS / editor ──
+.DS_Store
+.vscode/
+.idea/
+*.log

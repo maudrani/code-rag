@@ -1,0 +1,55 @@
+import { createNodeWebSocket } from '@hono/node-ws'
+import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
+import type { Engine } from '../contracts/engine.js'
+import { queryRoutes } from './routes/query.js'
+import { searchRoutes } from './routes/search.js'
+import { traceRoute } from './routes/ws-trace.js'
+
+const DEFAULT_PORT = 8787
+
+export interface BuiltApp {
+  app: Hono
+  /** call AFTER serve() to upgrade the http.Server for /ws/trace (@hono/node-ws). */
+  injectWebSocket: ReturnType<typeof createNodeWebSocket>['injectWebSocket']
+}
+
+/**
+ * buildApp — composes the surface HTTP server (ADR-008): /query (SSE chat),
+ * /search (deterministic), /ws/trace (WebSocket), + GET /health. One injected
+ * Engine is shared across every route + the event-bus. A global onError returns
+ * a consistent JSON envelope (no stack leak); notFound returns 404 JSON.
+ *
+ * The Engine is a parameter (DI) so this is unit-testable with a mock and the
+ * production entrypoint (server.ts) owns the real `createEngine` wiring.
+ */
+export function buildApp(engine: Engine): BuiltApp {
+  const app = new Hono()
+  const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app })
+
+  app.get('/health', (c) => c.json({ status: 'ok' }))
+  // route() merges the sub-app routes into this app, so this app's onError /
+  // notFound govern them too — one consistent error envelope across the surface.
+  app.route('/', queryRoutes(engine))
+  app.route('/', searchRoutes(engine))
+  app.get('/ws/trace', traceRoute(engine, upgradeWebSocket))
+
+  app.notFound((c) => c.json({ error: 'Not Found' }, 404))
+  app.onError((err, c) => {
+    // Expected client errors carry their own status; keep it, render as JSON.
+    if (err instanceof HTTPException) {
+      return c.json({ error: err.message || 'Request error' }, err.status)
+    }
+    // Unexpected errors: 500 with NO internal detail leaked to the client.
+    return c.json({ error: 'Internal Server Error' }, 500)
+  })
+
+  return { app, injectWebSocket }
+}
+
+/** Resolve the listen port: a positive integer from `value`, else the default (8787). */
+export function resolvePort(value: string | undefined): number {
+  const parsed = Number(value)
+  const valid = value !== undefined && value.trim() !== '' && Number.isInteger(parsed) && parsed > 0
+  return valid ? parsed : DEFAULT_PORT
+}

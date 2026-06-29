@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Lint + format (Biome)
+        run: npx @biomejs/biome ci .
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm run test
+# Gates from commit 1 (ADR-009). The `frontend` specialist adds the web build step
+# when it sets up web/ (Vite). Master owns this file (.github/ = _master, RULE-011).
