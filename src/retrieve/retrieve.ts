@@ -33,7 +33,12 @@ export interface RetrieveOptions {
   k?: number
   /** per-leg candidate pool = k * this (ADR-003: 3-5x). Default 5. */
   candidateMultiplier?: number
-  /** how many top BM25/dense hits seed the structural leg. Default = k. */
+  /**
+   * how many top BM25/dense hits seed the structural leg. Default = k. The TKT-206 gold-query eval
+   * VALIDATED this M1 seeding (BM25 ∪ dense top-N ∪ exact symbol-name): with the dense leg present
+   * the exact target is a strong dense direct hit, so it stays on top (keyword recall@10 = 1.0).
+   * Dropping BM25 seeding only helped the degraded no-dense mode and slightly hurt the shipped one.
+   */
   seedCount?: number
   /** RRF config. Default ADR-003 (k=60, code-weights). */
   rrf?: RrfConfig
