@@ -35,6 +35,11 @@ export function useTraceSocket(
       return
     }
     const opts = optionsRef.current
+    // SSR / jsdom safety: with no WebSocket and no injected factory there is nothing to connect to.
+    if (!opts.createWebSocket && typeof WebSocket === 'undefined') {
+      setStatus('closed')
+      return
+    }
     const url = `${opts.baseUrl ?? ''}/ws/trace`
     const socket = openTraceSocket(
       url,

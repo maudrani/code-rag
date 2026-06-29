@@ -61,7 +61,13 @@ export function openTraceSocket(
 
   const connect = (): void => {
     setStatus(attempt === 0 ? 'connecting' : 'reconnecting')
-    const socket = createWebSocket(url)
+    let socket: MinimalWebSocket
+    try {
+      socket = createWebSocket(url)
+    } catch {
+      setStatus('closed') // invalid URL / no WebSocket in this environment — give up quietly
+      return
+    }
     ws = socket
 
     socket.onopen = () => {
