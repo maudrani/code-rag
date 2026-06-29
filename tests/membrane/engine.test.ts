@@ -46,6 +46,12 @@ describe('createEngine — ingest', () => {
     expect(report.chunks).toBeGreaterThan(0)
     expect(report.durationMs).toBeGreaterThanOrEqual(0)
   })
+
+  it('lazily self-indexes on the first query when ingest() was not called', async () => {
+    const lazy = createEngine({ corpusPath: corpus })
+    const p = await lazy.query('where is parseQuery?', [], 'package')
+    expect(p.results.length).toBeGreaterThan(0)
+  })
 })
 
 describe('createEngine — query (real deterministic path)', () => {

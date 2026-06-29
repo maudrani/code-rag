@@ -49,6 +49,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine =>
   let deps: RetrieveDeps | null = null
   let bm25Handle: Bm25Index | null = null
   let ingestStats = { filesIndexed: 0, chunks: 0 }
+  let indexing: Promise<IngestReport> | null = null
   let queryCounter = 0
 
   async function ingest(repoPath: string = corpusPath): Promise<IngestReport> {
@@ -68,12 +69,29 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine =>
     return { ...ingestStats, durationMs: Date.now() - started }
   }
 
+  // Lazy single-flight self-index: a consumer that queries before calling ingest() gets
+  // the corpus indexed on first use (the HTTP server relies on this). Concurrent first
+  // queries share one ingest; a failure clears it so the next query can retry.
+  function ensureIndexed(): Promise<RetrieveDeps> {
+    if (deps) return Promise.resolve(deps)
+    if (!indexing) {
+      indexing = ingest(corpusPath).catch((err) => {
+        indexing = null
+        throw err
+      })
+    }
+    return indexing.then(() => {
+      if (!deps) throw new Error('membrane: ingest produced no index')
+      return deps
+    })
+  }
+
   async function query(
     question: string,
     history: Turn[],
     _intent: ConsumerIntent,
   ): Promise<Projection> {
-    if (!deps) throw new Error('membrane: ingest() must run before query()')
+    const ready = await ensureIndexed()
     const queryId = `q${++queryCounter}`
 
     // L0 — deterministic gate, then the conditional LLM rewrite residue.
@@ -93,7 +111,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine =>
     bus.emit({ queryId, layer: 'L3', type: 'indexed', payload: { chunks: ingestStats.chunks } })
 
     // L4 — hybrid retrieval over the held legs.
-    const results = await retrieve(resolvedQuery, deps, { k: TOP_K })
+    const results = await retrieve(resolvedQuery, ready, { k: TOP_K })
     bus.emit({
       queryId,
       layer: 'L4',
