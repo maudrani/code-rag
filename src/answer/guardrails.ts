@@ -29,9 +29,18 @@ export const CITE_INSTRUCTION =
   'Cite every claim with its chunk id in square brackets, e.g. [path#symbol@start-end]. ' +
   'Only cite ids that appear in the provided context; never invent an id.'
 
-/** The fixed refuse-when-empty copy (no interpolation -> cannot leak chunk content). */
-export function refusalMessage(): string {
-  return "I can't answer that from the provided code — the relevant context isn't in the index."
+/**
+ * The refuse-when-empty copy. With no argument it is the fixed canned text (no interpolation ->
+ * cannot leak chunk content) — byte-identical to before, so existing callers are unaffected.
+ *
+ * An optional `suggestion` (a near-miss symbol from `suggestSymbol`, TKT-309) appends a
+ * "Did you mean `X`?" — the only interpolated value is a symbol NAME the index already holds
+ * (never chunk content), so the no-outside-knowledge guarantee is preserved.
+ */
+export function refusalMessage(suggestion?: string): string {
+  const base =
+    "I can't answer that from the provided code — the relevant context isn't in the index."
+  return suggestion === undefined ? base : `${base} Did you mean \`${suggestion}\`?`
 }
 
 /** Result of the deterministic citation check. */

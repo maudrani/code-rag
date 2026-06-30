@@ -3,6 +3,7 @@ import {
   GROUNDING_FLOOR,
   MODEL_CHEAP,
   MODEL_STRONG,
+  MULTI_FILE_THRESHOLD,
   scoreGate,
 } from '../../src/answer/score-gate.js'
 import type { RankedChunk } from '../../src/contracts/index.js'
@@ -88,34 +89,62 @@ describe('scoreGate — signal 1: grounding -> band (lexical overlap)', () => {
   })
 })
 
-describe('scoreGate — signal 2: complexity-proxy -> tier (cheap/strong)', () => {
-  it('single file + factual query -> "cheap" + haiku', () => {
+// Build a retrieval over N distinct files (no intent verb in these queries) — exercises the
+// breadth backstop independent of intent.
+const distinctFiles = (n: number) => Array.from({ length: n }, (_, i) => rc(`f${i}.ts`, `sym${i}`))
+
+describe('scoreGate — signal 2: complexity-proxy -> tier (cheap/strong, ADR-005 recalibrated)', () => {
+  it('single file + lookup intent -> "cheap" + haiku', () => {
     const d = scoreGate([rc('a.ts', 'foo')], q('where is foo defined'))
     expect(d.tier).toBe('cheap')
     expect(d.model).toBe(MODEL_CHEAP)
   })
 
-  it('multiple distinct files -> "strong" + sonnet (multi-file reasoning)', () => {
-    const d = scoreGate([rc('a.ts', 'foo'), rc('b.ts', 'bar')], q('where is foo defined'))
+  it('reasoning intent DOMINATES (even single file) -> "strong" + sonnet', () => {
+    const d = scoreGate([rc('a.ts', 'foo')], q('how does foo flow through the app'))
     expect(d.tier).toBe('strong')
     expect(d.model).toBe(MODEL_STRONG)
   })
 
-  it('single file BUT a reasoning-intent keyword -> "strong"', () => {
-    const d = scoreGate([rc('a.ts', 'foo')], q('how does foo flow through the app'))
+  it('lookup intent stays "cheap" even at a multi-file spread (the dogfood fix)', () => {
+    // The OLD gate routed this to strong on distinctFiles>=2; intent now dominates the spread.
+    const d = scoreGate(
+      [rc('a.ts', 'foo'), rc('b.ts', 'bar'), rc('c.ts', 'baz')],
+      q('which file defines foo'),
+    )
+    expect(d.tier).toBe('cheap')
+  })
+
+  it('NO intent verb + genuine breadth (>= MULTI_FILE_THRESHOLD distinct files) -> "strong"', () => {
+    const d = scoreGate(distinctFiles(MULTI_FILE_THRESHOLD), q('config handlers pipeline modules'))
     expect(d.tier).toBe('strong')
   })
 
-  it('duplicate paths count as ONE distinct file -> "cheap"', () => {
+  it('NO intent verb + below the breadth threshold -> "cheap" (backstop does not over-fire)', () => {
+    const d = scoreGate(
+      distinctFiles(MULTI_FILE_THRESHOLD - 1),
+      q('config handlers pipeline modules'),
+    )
+    expect(d.tier).toBe('cheap')
+  })
+
+  it('strong intent dominates a co-occurring cheap-intent verb ("show me HOW ...") -> "strong"', () => {
+    const d = scoreGate([rc('a.ts', 'foo')], q('show me how foo flows across the modules'))
+    expect(d.tier).toBe('strong')
+  })
+
+  it('duplicate paths count as ONE distinct file -> below breadth -> "cheap"', () => {
     const d = scoreGate(
       [rc('a.ts', 'foo'), rc('a.ts', 'bar'), rc('a.ts', 'baz')],
-      q('what does foo return'),
+      q('parser tokens output'),
     )
     expect(d.tier).toBe('cheap')
   })
 
   it('intent is WORD-BOUNDARY: "flower" must not trigger the "flow" keyword', () => {
-    const d = scoreGate([rc('a.ts', 'flower')], q('where is the flower variable'))
+    // Neutral query (no cheap/strong intent verb) + 1 file -> cheap UNLESS "flower" wrongly
+    // matches "flow" (which would force strong) — so this isolates the boundary check.
+    const d = scoreGate([rc('a.ts', 'flower')], q('the flower variable'))
     expect(d.tier).toBe('cheap')
   })
 

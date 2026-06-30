@@ -34,8 +34,16 @@ export const GROUNDING_FLOOR = 0.25
 /** How many top results define "the assembled context" for the file/symbol proxy. */
 export const K_PROXY = 5
 
-/** >= this many distinct files in the top-K results => multi-file reasoning. */
-export const MULTI_FILE_THRESHOLD = 2
+/**
+ * Distinct files in the top-K results at/above which a NO-INTENT query is treated as genuinely
+ * broad (the breadth backstop -> strong). RAISED from 2 (TKT-308): a 2-file spread is retrieval
+ * noise, not answer complexity — RRF surfaces diverse files by design, so the old value forced
+ * ~every query to `strong` and made the cheap tier vestigial (cost dogfood 2026-06-30:
+ * ~$0.027/q strong measured vs ~$0.009 cheap modeled-never-measured). With K_PROXY=5, 4 means
+ * "most of the retrieval window is distinct files" = real breadth. Intent (below) is the dominant
+ * signal; this threshold only decides queries that carry NO intent verb.
+ */
+export const MULTI_FILE_THRESHOLD = 4
 
 /** Model ids per tier (claude-api skill, locked; ADR-005: haiku=cheap, sonnet=strong). */
 export const MODEL_CHEAP = 'claude-haiku-4-5'
@@ -58,6 +66,18 @@ export const STRONG_INTENT = [
 ] as const
 
 const STRONG_INTENT_RE = STRONG_INTENT.map((kw) => new RegExp(`\\b${kw}\\b`, 'i'))
+
+/**
+ * Lookup-intent keywords -> bias the CHEAP tier (ADR-005: "where/what/find/show -> cheap";
+ * "cheap for single-file factual lookup"). An explicit lookup ("where is X", "what does Y
+ * return") asks for a localized fact a small model answers well — so it stays cheap EVEN when
+ * retrieval spreads the result across several files (the dogfood's vestigial-cheap failure lived
+ * exactly here). Strong (reasoning) intent is checked FIRST and dominates, so "show me HOW auth
+ * flows" is still strong. Matched case-insensitively on word boundaries (same as STRONG_INTENT).
+ */
+export const CHEAP_INTENT = ['where', 'what', 'find', 'show', 'list', 'which'] as const
+
+const CHEAP_INTENT_RE = CHEAP_INTENT.map((kw) => new RegExp(`\\b${kw}\\b`, 'i'))
 
 /** Top-K retrieved chunks scanned for query-term overlap (the assembled-context horizon). */
 export const K_GROUND = 10
@@ -142,11 +162,24 @@ export const scoreGate: ScoreGate = (retrieval, query) => {
   // Read intent from the post-L0 resolvedQuery (the real standalone intent),
   // not the raw anaphoric question.
   const hasStrongIntent = STRONG_INTENT_RE.some((re) => re.test(query.resolvedQuery))
+  const hasCheapIntent = CHEAP_INTENT_RE.some((re) => re.test(query.resolvedQuery))
 
-  // OR-escalation: a false-cheap (under-powered model on a complex query) hurts
-  // answer quality more than a false-strong hurts cost.
-  const tier: GateDecision['tier'] =
-    distinctFiles >= MULTI_FILE_THRESHOLD || hasStrongIntent ? 'strong' : 'cheap'
+  // Tier (ADR-005, recalibrated TKT-308) — intent-PRIMARY, file-count as a raised breadth
+  // backstop. The prior `distinctFiles >= 2 || hasStrongIntent` forced ~every query to strong
+  // (cheap vestigial) because a 2-file spread is near-universal; intent is the real signal:
+  //   1. reasoning intent (how/why/explain/...) DOMINATES -> strong (synthesis earns the cost).
+  //   2. else an explicit lookup (where/what/find/...) -> cheap, EVEN at a multi-file spread
+  //      (the spread is retrieval noise; this is where the vestigial-cheap bug lived).
+  //   3. else (no intent verb) fall back to genuine breadth -> strong only at the raised
+  //      MULTI_FILE_THRESHOLD. A false-cheap on a truly complex query costs more answer quality
+  //      than a false-strong costs money, so the neutral case still escalates on real breadth.
+  const tier: GateDecision['tier'] = hasStrongIntent
+    ? 'strong'
+    : hasCheapIntent
+      ? 'cheap'
+      : distinctFiles >= MULTI_FILE_THRESHOLD
+        ? 'strong'
+        : 'cheap'
 
   const model = tier === 'strong' ? MODEL_STRONG : MODEL_CHEAP
 
