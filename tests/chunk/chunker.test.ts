@@ -133,3 +133,75 @@ describe('chunk-by-symbol edge + negative cases (TKT-102)', () => {
     expect(bySymbol(chunkSource('export default class C {}', 'd4.ts'), 'C')?.kind).toBe('class')
   })
 })
+
+// FTR-2 / A2 — generator functions dropped (peripheral-alignment remediation).
+// A top-level `function*` / `async function*` parses as `generator_function_declaration`;
+// the symbol switch only handled `function_declaration`, so generators fell into a
+// `<module>` glue chunk instead of becoming their own symbol chunk.
+describe('chunk-by-symbol — generator functions (FTR-2 / A2)', () => {
+  beforeAll(async () => {
+    await initParser()
+  })
+
+  it('emits a function chunk for an exported generator (export function* gen)', () => {
+    const chunks = chunkSource('export function* gen() {\n  yield 1\n}\n', 'gen.ts')
+    const gen = bySymbol(chunks, 'gen')
+    expect(gen?.kind).toBe('function')
+    expect(gen?.code).toContain('function* gen')
+    // it must NOT be swallowed into a <module> glue chunk
+    expect(chunks.some((c) => c.kind === 'module' && c.code.includes('function* gen'))).toBe(false)
+  })
+
+  it('emits a function chunk for an exported async generator (export async function* agen)', () => {
+    const chunks = chunkSource('export async function* agen() {\n  yield 1\n}\n', 'agen.ts')
+    const agen = bySymbol(chunks, 'agen')
+    expect(agen?.kind).toBe('function')
+    expect(agen?.code).toContain('async function* agen')
+  })
+
+  it('emits a function chunk for a non-exported top-level generator too', () => {
+    const chunks = chunkSource('function* g() {\n  yield 1\n}\n', 'g.ts')
+    expect(bySymbol(chunks, 'g')?.kind).toBe('function')
+  })
+})
+
+// FTR-2 / A4 — namespace members dropped (peripheral-alignment remediation).
+// `export namespace X { … }` parses as `internal_module` (and `module X { … }` as
+// `module`); with no case for these, the whole namespace collapsed into ONE
+// `<module>` chunk and its members were never indexed. Fix: recurse the body like
+// a class body, emitting a container chunk plus qualified member chunks.
+describe('chunk-by-symbol — namespace members (FTR-2 / A4)', () => {
+  beforeAll(async () => {
+    await initParser()
+  })
+
+  it('recurses an exported namespace, emitting its members as symbol chunks', () => {
+    const src =
+      'export namespace X {\n  export function dist(a: number, b: number): number {\n    return a + b\n  }\n}\n'
+    const chunks = chunkSource(src, 'ns.ts')
+    // the member function is its own symbol chunk, qualified by the namespace (like Class.method)
+    const dist = mustSymbol(chunks, 'X.dist')
+    expect(dist.kind).toBe('function')
+    expect(dist.code).toContain('function dist')
+    // the namespace container itself is emitted (like a class chunk)
+    expect(bySymbol(chunks, 'X')?.kind).toBe('other')
+    // and it is NOT collapsed into a single lone <module> glue chunk that drops the member
+    expect(chunks.some((c) => c.kind === 'module' && c.symbol === '<module>')).toBe(false)
+  })
+
+  it('recurses a module-keyword namespace and qualifies nested class members', () => {
+    const src = 'module Z {\n  export class C {\n    m(): number {\n      return 1\n    }\n  }\n}\n'
+    const chunks = chunkSource(src, 'mod.ts')
+    expect(bySymbol(chunks, 'Z')?.kind).toBe('other')
+    expect(bySymbol(chunks, 'Z.C')?.kind).toBe('class')
+    expect(bySymbol(chunks, 'Z.C.m')?.kind).toBe('method')
+  })
+
+  it('indexes interface / type / enum members of a namespace as "other"', () => {
+    const src =
+      'export namespace Geo {\n  export interface Point {\n    x: number\n  }\n  export type Pair = [number, number]\n}\n'
+    const chunks = chunkSource(src, 'geo.ts')
+    expect(bySymbol(chunks, 'Geo.Point')?.kind).toBe('other')
+    expect(bySymbol(chunks, 'Geo.Pair')?.kind).toBe('other')
+  })
+})

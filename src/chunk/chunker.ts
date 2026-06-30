@@ -82,8 +82,12 @@ export function chunkTree(
     glue = []
   }
 
-  const emitClass = (decl: SyntaxNode, spanNode: SyntaxNode): void => {
-    const className = nameOf(decl) ?? '<anonymous>'
+  /** Qualify a symbol by its enclosing namespace (`Ns.member`), mirroring `Class.method`. */
+  const qualify = (prefix: string, name: string): string =>
+    prefix === '' ? name : `${prefix}.${name}`
+
+  const emitClass = (decl: SyntaxNode, spanNode: SyntaxNode, prefix = ''): void => {
+    const className = qualify(prefix, nameOf(decl) ?? '<anonymous>')
     chunks.push(makeChunk(className, 'class', spanNode))
     const body = decl.childForFieldName('body')
     if (!body) return
@@ -95,20 +99,48 @@ export function chunkTree(
     }
   }
 
-  /** Classify a declaration. `spanNode` is what the chunk spans (export wrapper if any). Returns true if a symbol chunk was emitted. */
-  const handleDecl = (decl: SyntaxNode, spanNode: SyntaxNode): boolean => {
+  /**
+   * Classify a declaration. `spanNode` is what the chunk spans (export wrapper if
+   * any). `prefix` qualifies members of an enclosing namespace (`Ns.member`).
+   * Returns true if a symbol chunk was emitted.
+   */
+  const handleDecl = (decl: SyntaxNode, spanNode: SyntaxNode, prefix = ''): boolean => {
     switch (decl.type) {
-      case 'function_declaration': {
+      case 'function_declaration':
+      // `function*` / `async function*` parse as a distinct node — same additive
+      // switch-case remedy peripheral applied for interface/type/enum (del-029).
+      case 'generator_function_declaration': {
         const name = nameOf(decl)
         if (name === null || decl.childForFieldName('body') === null) return false // signature → glue
         flushGlue()
-        chunks.push(makeChunk(name, 'function', spanNode))
+        chunks.push(makeChunk(qualify(prefix, name), 'function', spanNode))
         return true
       }
       case 'class_declaration':
       case 'abstract_class_declaration': {
         flushGlue()
-        emitClass(decl, spanNode)
+        emitClass(decl, spanNode, prefix)
+        return true
+      }
+      // `namespace X {…}` parses as `internal_module`, `module X {…}` as `module`.
+      // Recurse the body like a class body: a container chunk + qualified member
+      // chunks, so namespace members are indexed instead of lost to a glue chunk.
+      case 'internal_module':
+      case 'module': {
+        flushGlue()
+        const nsName = qualify(prefix, nameOf(decl) ?? '<anonymous>')
+        // No 'namespace' kind in the (master-owned) Chunk contract → 'other', as for interface/type/enum.
+        chunks.push(makeChunk(nsName, 'other', spanNode))
+        const body = decl.childForFieldName('body')
+        if (body !== null) {
+          for (const member of body.namedChildren) {
+            // members may be export-wrapped (`export function dist(){}`) → name the
+            // inner decl but span the export statement (matches the top-level loop).
+            const inner =
+              member.type === 'export_statement' ? member.childForFieldName('declaration') : member
+            if (inner !== null) handleDecl(inner, member, nsName)
+          }
+        }
         return true
       }
       case 'interface_declaration':
@@ -117,7 +149,7 @@ export function chunkTree(
         const name = nameOf(decl)
         if (name === null) return false
         flushGlue()
-        chunks.push(makeChunk(name, 'other', spanNode))
+        chunks.push(makeChunk(qualify(prefix, name), 'other', spanNode))
         return true
       }
       case 'lexical_declaration':
@@ -130,7 +162,7 @@ export function chunkTree(
           (valueType === 'arrow_function' || valueType === 'function_expression')
         ) {
           flushGlue()
-          chunks.push(makeChunk(name, 'function', spanNode))
+          chunks.push(makeChunk(qualify(prefix, name), 'function', spanNode))
           return true
         }
         return false // non-function binding → glue
