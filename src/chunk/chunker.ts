@@ -63,6 +63,34 @@ export function chunkTree(
     }
   }
 
+  /**
+   * A chunk spanning `startNode`..`endNode` (used when a member's leading decorators
+   * are separate preceding siblings of the method node). `code` is the verbatim
+   * line-slice of the span, so the decorator(s) ride with the body; `refNodes` is
+   * what structuralRefs walks — the decorators are included, so a symbol used in
+   * `@Inject(Dep)` / `@UseGuards(AuthGuard)` resolves to its import edge.
+   */
+  const makeSpanChunk = (
+    symbol: string,
+    kind: Chunk['kind'],
+    startNode: SyntaxNode,
+    endNode: SyntaxNode,
+    refNodes: SyntaxNode[],
+  ): Chunk => {
+    const startLine = startNode.startPosition.row + 1
+    const endLine = endNode.endPosition.row + 1
+    return {
+      id: buildChunkId(path, symbol, startLine, endLine),
+      path,
+      lang,
+      symbol,
+      kind,
+      span: { startLine, endLine },
+      code: lines.slice(startLine - 1, endLine).join('\n'),
+      structuralRefs: extractStructuralRefs(refNodes, importTable),
+    }
+  }
+
   const flushGlue = (): void => {
     const first = glue[0]
     const last = glue[glue.length - 1]
@@ -91,11 +119,30 @@ export function chunkTree(
     chunks.push(makeChunk(className, 'class', spanNode))
     const body = decl.childForFieldName('body')
     if (!body) return
+    // tree-sitter emits a method's decorators as PRECEDING `decorator` siblings of the
+    // method_definition (the method node itself excludes them). Accumulate the run so a
+    // decorated method keeps its decorators in the chunk — a route `@Get('/users')` IS
+    // the endpoint; dropping it breaks the "what endpoints exist" capability. Keep-header
+    // pattern: peripheral cast.ts:160 (bodyOf unwraps decorator wrappers) + skill
+    // code-chunking ("walk back over decorator siblings"); verified by AST spike.
+    let pendingDecorators: SyntaxNode[] = []
     for (const member of body.namedChildren) {
-      if (member.type === 'method_definition') {
-        const methodName = nameOf(member) ?? '<anonymous>'
-        chunks.push(makeChunk(`${className}.${methodName}`, 'method', member))
+      if (member.type === 'decorator') {
+        pendingDecorators.push(member)
+        continue
       }
+      if (member.type === 'method_definition') {
+        const symbol = `${className}.${nameOf(member) ?? '<anonymous>'}`
+        const first = pendingDecorators[0]
+        chunks.push(
+          first === undefined
+            ? makeChunk(symbol, 'method', member)
+            : makeSpanChunk(symbol, 'method', first, member, [...pendingDecorators, member]),
+        )
+      }
+      // Any non-decorator member ends the current run: decorators on a property/field
+      // ride inside the class chunk, never attach to the following method.
+      pendingDecorators = []
     }
   }
 

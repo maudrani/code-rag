@@ -68,6 +68,36 @@ loose top-level code. Decisions (resolved against the real grammar):
   retrieval (class-level and method-level citations).
 - **oversized symbols are kept whole** in M1 (windowed splitting is future work).
 
+### Keep-header guarantee (FTR-12 / TKT-106)
+
+The retrieval definition-boost pins the queried symbol's defining chunk into RRF
+at rank 0 — so the chunk **must** contain the symbol's full definition. We
+guarantee it:
+
+- **Signature rides with the body, always.** A symbol is one chunk spanning the
+  whole declaration node (signature → body); a multi-line / generic signature is
+  kept whole. Because we **never size-split** a symbol (oversized kept whole,
+  above), the "if a long body is split, the header must ride each piece" case
+  *cannot occur* in M1. **M2 forward-guard:** if windowed splitting is ever added,
+  the header (signature) MUST be re-emitted on each piece (cAST keep-header,
+  peripheral `cast.ts:175`).
+- **Decorators ride with the member they annotate.** Top-level class decorators
+  and property decorators are children of the spanned node (already captured).
+  *Method* decorators are separate **preceding `decorator` siblings** of the
+  `method_definition` (the method node excludes them), so `emitClass` accumulates
+  the run and extends the method chunk's span to its first decorator. A route
+  handler `@Get('/users') getUsers()` therefore keeps `@Get('/users')` in the
+  chunk — the endpoint *is* the decorator. The decorators are also walked for
+  `structuralRefs`, so a symbol used in `@UseGuards(AuthGuard)` resolves to its
+  import edge. (Pattern: peripheral `cast.ts:160`; skill `code-chunking`
+  "walk back over decorator siblings"; the gate is `tests/chunk/keep-header.test.ts`,
+  non-vacuous — delete the accumulation and it goes red.)
+- **Leading JSDoc / comments are module glue in M1**, not bound to the symbol
+  chunk (a deliberate boundary: binding them ripples the committed fixture, and
+  retrieval's `contextHeader` is the complementary mechanism). Peripheral binds
+  the docstring to its owner (`keepDocstring`); adopting that here is a noted
+  enhancement, flagged to retrieval + master, not done unilaterally.
+
 ### structuralRefs `{ calls, imports }`
 
 - **calls** — callee names in the body: direct `f()`, method `o.m()` (property
