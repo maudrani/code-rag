@@ -154,3 +154,51 @@ export function formatReport(perBucket: BucketReport[], overall: BucketReport, k
   const header = `bucket       n  recall@${k}   mrr   ndcg@${k}`
   return [header, ...perBucket.map(row), '─'.repeat(header.length), row(overall)].join('\n')
 }
+
+// ── the deterministic regression gate (FTR-22, demonstrate-deterministically P5) ──────────────
+// Adopts peripheral eval/gate.ts: a committed baseline + new>=baseline; NaN is a FAIL (a broken
+// metric must never read as a pass); corpus drift (a gold target absent from the corpus) is an
+// ERROR, not a silent 0. The gate is what turns "I think the pin works" into "the gate proves it".
+
+/** A committed baseline snapshot: metric name → its byte-stable expected value. */
+export type EvalBaseline = Readonly<Record<string, number>>
+
+/** One gold target's identity + how many chunks it matched in the corpus (for the drift guard). */
+export interface GoldCoverage {
+  label: string
+  relevantTotal: number
+}
+
+/**
+ * Throw if any gold target resolved to ZERO chunks — the corpus drifted (a chunker/rename change)
+ * and the metric would otherwise silently score 0, masking the drift as a regression-or-pass.
+ */
+export function assertNoCorpusDrift(coverage: readonly GoldCoverage[]): void {
+  const drifted = coverage.filter((c) => c.relevantTotal <= 0).map((c) => c.label)
+  if (drifted.length > 0) {
+    throw new Error(
+      `eval corpus drift: gold target(s) absent from the corpus: ${drifted.join(', ')}`,
+    )
+  }
+}
+
+/**
+ * Assert every baseline metric holds: the current value must exist, be a number (NaN/undefined is a
+ * FAIL), and be >= the committed baseline (within epsilon). Throws on the first violation with a
+ * message naming the metric + both values — the CI-readable gate.
+ */
+export function assertNonRegression(
+  current: Readonly<Record<string, number>>,
+  baseline: EvalBaseline,
+  epsilon = 1e-9,
+): void {
+  for (const [metric, base] of Object.entries(baseline)) {
+    const got = current[metric]
+    if (got === undefined || Number.isNaN(got)) {
+      throw new Error(`eval gate: metric "${metric}" is ${String(got)} — NaN/absent is a fail`)
+    }
+    if (got < base - epsilon) {
+      throw new Error(`eval gate: regression on "${metric}": ${got} < baseline ${base}`)
+    }
+  }
+}

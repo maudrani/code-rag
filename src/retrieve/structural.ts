@@ -19,6 +19,7 @@
  */
 import type { Chunk } from '../contracts/chunk.js'
 import type { LegCandidate } from './fuse.js'
+import { isCodeShaped, shortNameOf } from './symbols.js'
 
 /** In-memory structural index over a Chunk[] corpus (the call + import graph). */
 export interface StructuralIndex {
@@ -26,6 +27,13 @@ export interface StructuralIndex {
   readonly byId: ReadonlyMap<string, Chunk>
   /** symbol name → chunk ids that DEFINE that symbol (a symbol may be defined more than once). */
   readonly definers: ReadonlyMap<string, readonly string[]>
+  /**
+   * SHORT name (last descriptor) → defining chunk ids. The method-call resolution bucket (a method
+   * `o.m()` is keyed `Class.m` by the chunker but called as the bare `m`). Exposed so the
+   * definition-boost (FTR-22) can resolve a query's symbol by short name, reusing the same map the
+   * call graph already builds. (peripheral codegraph resolver.ts `byName`/`byQualifiedName` cascade.)
+   */
+  readonly byName: ReadonlyMap<string, readonly string[]>
   /** chunk id → its one-hop neighbour chunk ids (undirected, deduped, self excluded). */
   readonly neighbours: ReadonlyMap<string, ReadonlySet<string>>
 }
@@ -65,17 +73,6 @@ function resolveRelativeImport(importerPath: string, spec: string): string | und
   const slash = importerPath.lastIndexOf('/')
   const dir = slash >= 0 ? importerPath.slice(0, slash) : ''
   return stripExt(normalizePosix(`${dir}/${spec}`))
-}
-
-/**
- * Short name of a (possibly qualified) symbol — the last descriptor: `Auth.login` → `login`,
- * `parse` → `parse`. The chunker keys a method as `Class.method`, but `structuralRefs.calls`
- * captures the bare property name for `o.m()`, so the call graph needs this short-name bucket to
- * resolve method calls (peripheral codegraph's `name` = "last descriptor in symbol", GAP A1).
- */
-function shortNameOf(symbol: string): string {
-  const dot = symbol.lastIndexOf('.')
-  return dot >= 0 ? symbol.slice(dot + 1) : symbol
 }
 
 /** The in-corpus files (ext-less paths) a chunk imports via RELATIVE specifiers (bare = external). */
@@ -158,7 +155,72 @@ export function buildStructuralIndex(chunks: readonly Chunk[]): StructuralIndex 
     }
   }
 
-  return { byId, definers, neighbours }
+  return { byId, definers, byName, neighbours }
+}
+
+/**
+ * Resolve captured query symbols (symbols.ts) to their defining chunk ids — the NL->definition
+ * bridge for the definition-boost (FTR-22). Cascade per token:
+ *   1. EXACT full-symbol match (`definers`) — `useChatStream`, `Auth.login`, `rrfFuse`. Always
+ *      trusted: the query literally names a defined symbol. Overloads (>1 definer) pin all.
+ *   2. else, for a CODE-SHAPED token only (isCodeShaped), an UNAMBIGUOUS short-name match
+ *      (`byName`, exactly one definer) — covers a naming mismatch like `db.prepare` -> the method
+ *      keyed `Database.prepare`. Ambiguous short names (≥2 definers) pin NONE — honesty over recall.
+ * A slash-path token is skipped (path->chunk resolution is deferred past M1). A plain word resolves
+ * ONLY by the exact path, so prose ("how does login happen") never fuzzily pins a method.
+ */
+export function resolveDefinitions(symbols: readonly string[], index: StructuralIndex): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  const add = (id: string): void => {
+    if (!seen.has(id)) {
+      seen.add(id)
+      ids.push(id)
+    }
+  }
+  for (const token of symbols) {
+    const exact = index.definers.get(token)
+    if (exact !== undefined && exact.length > 0) {
+      for (const id of exact) add(id)
+      continue
+    }
+    if (token.includes('/') || !isCodeShaped(token)) continue
+    const short = index.byName.get(shortNameOf(token))
+    if (short !== undefined && short.length === 1) {
+      const only = short[0]
+      if (only !== undefined) add(only)
+    }
+  }
+  return ids
+}
+
+/**
+ * Pin resolved definition chunks at the FRONT (rank 0..) of the structural leg's candidate list —
+ * the distance-0 "anchor leads" injection (FTR-22; peripheral codegraph-lens adapter.ts:172-174).
+ * At rank 0 the definition earns the structural leg's largest RRF term (`w/(k+1)`) and leads its
+ * own deps, so it survives fusion into top-k without a contract change (it rides the structural
+ * leg, not a new score).
+ *
+ * - DEDUPES: a pinned id already present among `candidates` is removed from the tail, so rrfFuse
+ *   (which accumulates per-occurrence within a leg) counts it ONCE, at rank 0.
+ * - Pins score strictly above every existing candidate, keeping the list a valid score-desc order.
+ * - Defensive: a definition id absent from the corpus is dropped. No definitions -> a no-op copy.
+ */
+export function pinDefinitions(
+  candidates: readonly LegCandidate[],
+  defChunkIds: readonly string[],
+  index: StructuralIndex,
+): LegCandidate[] {
+  const pins = defChunkIds.filter((id) => index.byId.has(id))
+  if (pins.length === 0) return [...candidates]
+  const pinSet = new Set(pins)
+  const topScore = candidates.reduce((max, c) => Math.max(max, c.score), 0)
+  const pinned: LegCandidate[] = pins.map((id, i) => ({
+    chunkId: id,
+    score: topScore + pins.length - i, // strictly > every candidate; preserves pin order
+  }))
+  const rest = candidates.filter((c) => !pinSet.has(c.chunkId))
+  return [...pinned, ...rest]
 }
 
 /**

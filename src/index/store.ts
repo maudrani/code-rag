@@ -20,6 +20,7 @@ import { createDenseLeg, type VectorEntry } from '../retrieve/dense.js'
 import type { LegCandidate } from '../retrieve/fuse.js'
 import type { LexicalLeg, RetrieveDeps } from '../retrieve/retrieve.js'
 import { buildStructuralIndex, type StructuralIndex } from '../retrieve/structural.js'
+import { shortNameOf } from '../retrieve/symbols.js'
 import {
   FTS_INSERT_SQL,
   ftsCreateTableSql,
@@ -189,11 +190,16 @@ export class SqliteStore {
     const chunks = this.chunkList()
     const byId = new Map<string, Chunk>()
     const definers = new Map<string, string[]>()
+    const byName = new Map<string, string[]>() // short-name bucket (edge-independent; FTR-22 resolution)
     for (const chunk of chunks) {
       byId.set(chunk.id, chunk)
       const defs = definers.get(chunk.symbol)
       if (defs === undefined) definers.set(chunk.symbol, [chunk.id])
       else defs.push(chunk.id)
+      const short = shortNameOf(chunk.symbol)
+      const named = byName.get(short)
+      if (named === undefined) byName.set(short, [chunk.id])
+      else named.push(chunk.id)
     }
     const neighbours = new Map<string, Set<string>>()
     const edges = this.db.prepare('SELECT src, dst FROM structural_edges').all() as {
@@ -208,7 +214,7 @@ export class SqliteStore {
       }
       set.add(dst)
     }
-    return { byId, definers, neighbours }
+    return { byId, definers, byName, neighbours }
   }
 
   /** All stored chunks as an id → Chunk map (round-trips the indexed corpus). */

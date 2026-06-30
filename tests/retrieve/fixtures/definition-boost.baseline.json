@@ -1,0 +1,8 @@
+{
+  "note": "FTR-22 definition-boost regression baseline. Offline tier (BM25 + structural, no dense) over the real self-indexed src/ corpus. recall@10 WITH the distance-0 pin must stay 1.0 — every 'how does <symbol> work' body chunk is guaranteed in top-k. If the corpus changes intentionally and this drops, re-measure and bump deliberately (a drop is a real regression, not a flake).",
+  "k": 10,
+  "tier": "offline-bm25-structural",
+  "metrics": {
+    "recallAtK_withPin": 1.0
+  }
+}

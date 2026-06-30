@@ -8,8 +8,13 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Chunk } from '../../src/contracts/chunk.js'
-import { DEFAULT_RRF_CONFIG, rrfFuse } from '../../src/retrieve/fuse.js'
-import { buildStructuralIndex, structuralExpand } from '../../src/retrieve/structural.js'
+import { DEFAULT_RRF_CONFIG, type LegCandidate, rrfFuse } from '../../src/retrieve/fuse.js'
+import {
+  buildStructuralIndex,
+  pinDefinitions,
+  resolveDefinitions,
+  structuralExpand,
+} from '../../src/retrieve/structural.js'
 import {
   allChunks,
   bm25SearchChunk,
@@ -240,5 +245,90 @@ describe('buildStructuralIndex — multi-definer disambiguation (A3: import-tabl
     const index = buildStructuralIndex([auth, session, caller])
     expect(index.neighbours.get(caller.id)?.has(auth.id)).toBe(true)
     expect(index.neighbours.get(caller.id)?.has(session.id)).toBe(true)
+  })
+})
+
+describe('StructuralIndex.byName — short-name -> defining chunk ids (exposed for resolution, FTR-22)', () => {
+  it('exposes the short-name (last-descriptor) bucket built during indexing', () => {
+    const auth = mk('src/auth.ts', 'Auth.login', { calls: [], imports: [] })
+    const index = buildStructuralIndex([...allChunks, auth])
+    expect(index.byName.get('searchIndex')).toEqual([searchIndexChunk.id]) // top-level == short name
+    expect(index.byName.get('login')).toEqual([auth.id]) // method's last descriptor
+  })
+})
+
+describe('resolveDefinitions — captured symbol -> defining chunk id (definers -> byName cascade, FTR-22)', () => {
+  const index = buildStructuralIndex(allChunks)
+
+  it('resolves an exact full-symbol token to its defining chunk', () => {
+    expect(resolveDefinitions(['searchIndex'], index)).toEqual([searchIndexChunk.id])
+    expect(resolveDefinitions(['VectorStore'], index)).toEqual([vectorStoreChunk.id])
+  })
+
+  it('falls back to an UNAMBIGUOUS short-name when the exact symbol misses (code-shaped token)', () => {
+    // corpus keys the method as `Database.prepare`; the query writes `db.prepare` (exact miss).
+    const dbPrepare = mk('src/db.ts', 'Database.prepare', { calls: [], imports: [] })
+    const idx = buildStructuralIndex([dbPrepare])
+    expect(resolveDefinitions(['db.prepare'], idx)).toEqual([dbPrepare.id]) // short name `prepare`, unique
+  })
+
+  it('does NOT short-name resolve an AMBIGUOUS name (multiple definers) — pin none, stay honest', () => {
+    const auth = mk('src/auth.ts', 'Auth.login', { calls: [], imports: [] })
+    const session = mk('src/session.ts', 'Session.login', { calls: [], imports: [] })
+    const idx = buildStructuralIndex([auth, session])
+    expect(resolveDefinitions(['X.login'], idx)).toEqual([]) // `login` resolves to 2 chunks -> skip
+  })
+
+  it('does NOT short-name resolve a plain lowercase word (not code-shaped) — exact only', () => {
+    expect(resolveDefinitions(['search'], index)).toEqual([]) // "search" != exact symbol; not code-shaped
+  })
+
+  it('skips a slash-path token (no symbol resolution at M1) without a wrong-extension miss-pin', () => {
+    expect(resolveDefinitions(['src/index/store.ts'], index)).toEqual([]) // not exact; `/` -> deferred
+  })
+
+  it('returns [] for an unresolved token and dedupes repeats', () => {
+    expect(resolveDefinitions(['zzznope'], index)).toEqual([])
+    expect(resolveDefinitions(['searchIndex', 'searchIndex'], index)).toEqual([searchIndexChunk.id])
+  })
+})
+
+describe('pinDefinitions — inject the definition chunk at structural rank 0 (FTR-22)', () => {
+  const index = buildStructuralIndex(allChunks)
+  const cand = (id: string, score: number): LegCandidate => ({ chunkId: id, score })
+
+  it('prepends the resolved definition at rank 0', () => {
+    const out = pinDefinitions([], [vectorStoreChunk.id], index)
+    expect(out).toHaveLength(1)
+    expect(out[0]?.chunkId).toBe(vectorStoreChunk.id)
+  })
+
+  it('dedupes a pinned chunk that is ALSO an expanded candidate (no within-leg double-count)', () => {
+    // rrfFuse appears both as a structural neighbour AND as the pinned definition -> must be ONE entry, at rank 0.
+    const candidates = [cand(rrfFuseChunk.id, 1), cand(embedQueryChunk.id, 1)]
+    const out = pinDefinitions(candidates, [rrfFuseChunk.id], index)
+    expect(out.filter((c) => c.chunkId === rrfFuseChunk.id)).toHaveLength(1)
+    expect(out[0]?.chunkId).toBe(rrfFuseChunk.id) // pulled to rank 0
+    expect(out.map((c) => c.chunkId)).toContain(embedQueryChunk.id) // the other candidate survives
+  })
+
+  it('scores the pin strictly above every existing candidate (keeps the list score-desc valid)', () => {
+    const out = pinDefinitions([cand(embedQueryChunk.id, 5)], [vectorStoreChunk.id], index)
+    const pin = out.find((c) => c.chunkId === vectorStoreChunk.id)
+    expect(pin?.score).toBeGreaterThan(5)
+  })
+
+  it('preserves the order of multiple pins', () => {
+    const out = pinDefinitions([], [vectorStoreChunk.id, rrfFuseChunk.id], index)
+    expect(out.map((c) => c.chunkId)).toEqual([vectorStoreChunk.id, rrfFuseChunk.id])
+  })
+
+  it('is a no-op when there are no definitions to pin (returns the candidates unchanged)', () => {
+    const candidates = [cand(embedQueryChunk.id, 1)]
+    expect(pinDefinitions(candidates, [], index)).toEqual(candidates)
+  })
+
+  it('ignores a definition id absent from the corpus (defensive)', () => {
+    expect(pinDefinitions([], ['ghost.ts#nope@1-2'], index)).toEqual([])
   })
 })

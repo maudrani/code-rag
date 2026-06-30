@@ -13,7 +13,13 @@ import type { Chunk } from '../contracts/chunk.js'
 import type { RetrievalResult } from '../contracts/retrieval.js'
 import { DEFAULT_RRF_CONFIG, type LegCandidate, type RrfConfig, rrfFuse } from './fuse.js'
 import { deriveSeeds } from './seed.js'
-import { type StructuralIndex, structuralExpand } from './structural.js'
+import {
+  pinDefinitions,
+  resolveDefinitions,
+  type StructuralIndex,
+  structuralExpand,
+} from './structural.js'
+import { extractQuerySymbols } from './symbols.js'
 
 /** A lexical/semantic leg: top-`limit` candidates for a query. Sync (BM25) or async (ONNX dense). */
 export interface LexicalLeg {
@@ -42,6 +48,12 @@ export interface RetrieveOptions {
   seedCount?: number
   /** RRF config. Default ADR-003 (k=60, code-weights). */
   rrf?: RrfConfig
+  /**
+   * Pin the queried symbol's defining chunk at structural rank 0 (FTR-22 definition-boost). Default
+   * true. Exposed as a switch so the eval can prove the pin NON-VACUOUS: with it off, the
+   * reproduced "how does X work" body drops out of top-k (the gate fails if the behaviour is gone).
+   */
+  definitionPin?: boolean
 }
 
 /**
@@ -92,5 +104,45 @@ export async function retrieve(
   const seeds = deriveSeeds(query, directSeedIds, deps.structural)
   const structuralCandidates = structuralExpand(seeds, deps.structural)
 
-  return rrfFuse({ bm25, dense, structural: structuralCandidates }, deps.chunks, rrf).slice(0, k)
+  // definition-boost (FTR-22): pin the queried symbol's OWN defining chunk at structural rank 0, so
+  // the definition the question is about is guaranteed a strong fused contribution — it would
+  // otherwise lose to its smaller deps + the BM25 length penalty (the reproduced "how does X work"
+  // gap). Pure + deterministic; degrades to a no-op when the query resolves no symbol; rides the
+  // structural leg, so RankedChunk.scores stays {bm25,dense,structural} (no contract change).
+  const definitionIds =
+    options.definitionPin === false
+      ? []
+      : resolveDefinitions(extractQuerySymbols(query), deps.structural)
+  const structural = pinDefinitions(structuralCandidates, definitionIds, deps.structural)
+
+  const fused = rrfFuse({ bm25, dense, structural }, deps.chunks, rrf)
+  return guaranteeDefinitions(fused, definitionIds, k)
+}
+
+/**
+ * The definition-boost SAFETY NET (FTR-22). The structural-rank-0 pin (pinDefinitions) lifts the
+ * queried symbol's definition HIGH in the ranking, but it is not airtight: a strong dense leg can
+ * flood the top-k and push a pinned-but-weak definition past the cutoff (observed with the real
+ * ONNX leg). This guarantees PRESENCE: any resolved definition that fell outside top-k is rescued
+ * back in.
+ *
+ * Order is preserved: `fused` is sorted desc, so a rescued definition (which ranked BELOW k) has a
+ * fused score <= every retained top-k entry — appending it at the tail keeps the list sorted desc
+ * by `fused` (the RetrievalResult contract holds). The pin decides the definition's RANK; this only
+ * decides its INCLUSION. A no-op when nothing is pinned (definitionIds empty) — identical to the
+ * pre-FTR-22 `fused.slice(0, k)`.
+ */
+function guaranteeDefinitions(
+  fused: RetrievalResult,
+  definitionIds: readonly string[],
+  k: number,
+): RetrievalResult {
+  const top = fused.slice(0, k)
+  if (definitionIds.length === 0 || k <= 0) return top
+  const present = new Set(top.map((r) => r.chunk.id))
+  const wanted = new Set(definitionIds)
+  const rescued = fused.filter((r) => wanted.has(r.chunk.id) && !present.has(r.chunk.id))
+  if (rescued.length === 0) return top
+  const keep = Math.max(0, k - rescued.length)
+  return [...top.slice(0, keep), ...rescued.slice(0, k - keep)]
 }

@@ -43,3 +43,33 @@ for **parallel-not-cascade** (each leg recovers what the others miss).
 > noise rather than signal — it shines on "where is X used / how does X's subsystem work" queries,
 > which a definition-recall metric doesn't capture). The numbers are a floor for the structural leg's
 > real value.
+
+## Definition-boost gate (FTR-22) — "how does &lt;symbol&gt; work" recall@10
+
+A second, symbol-chunk-granular gate (`tests/retrieve/definition-boost.eval.test.ts`) for the
+reproduced gap: a "how does X work" question must retrieve X's own **body** chunk. The
+definition-boost pins the resolved definition at structural rank 0 before RRF (it would otherwise
+lose to its smaller deps + the BM25 length penalty). Offline tier (BM25 + structural), 8 gold
+queries across kinds (function + class), each relevant = the symbol's body chunk:
+
+| condition            | recall@10 | bodies in top-10 |
+|----------------------|-----------|------------------|
+| **with the pin**     | **1.000** | 8 / 8 (ranks 0–3) |
+| without the pin      | 0.375     | 3 / 8 (5 drop OUT entirely) |
+
+**The pin is load-bearing, not decorative:** remove it and 5 of 8 bodies fall out of top-10
+(`buildStructuralIndex`, `rrfFuse`, `createOnnxEmbedder`, `structuralExpand`, `SqliteStore`), the
+rest sinking to ranks 4–9. This is the **non-vacuity** property `demonstrate-deterministically`
+requires: the gate fails by construction if the behaviour is removed. The 1.000 is held to a
+committed byte-stable baseline (`fixtures/definition-boost.baseline.json`); a drop is a real
+regression, NaN is a fail, and a gold target absent from the corpus errors (drift, not a silent 0).
+
+**Why a pin AND a guaranteed slot (the eval drove the design).** The RRF pin alone is *not*
+airtight: running the gate with the **real ONNX dense leg** (`RUN_SLOW`) showed the dense leg can
+flood the top-k and push a pinned-but-otherwise-weak body back *out* (recall fell below 1). So the
+pin earns the definition a high *rank* (0–3), and a final **guaranteed slot** rescues any resolved
+definition that still falls past the cutoff — appending it at the tail, where its fused score is
+lowest, so the `RetrievalResult` stays sorted desc by `fused` (no contract break). Two honest
+layers: the pin decides the definition's **rank**, the slot decides its **inclusion**. A
+deterministic test simulates the flood (a mock dense leg) so the guarantee is gated offline, not
+only under `RUN_SLOW`.

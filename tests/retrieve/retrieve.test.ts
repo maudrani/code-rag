@@ -155,6 +155,65 @@ describe('retrieve — edge + negative cases', () => {
   })
 })
 
+describe('retrieve — definition pin (FTR-22: guarantee the queried symbol reaches context)', () => {
+  it('surfaces an isolated query-named definition that is otherwise UNREACHABLE', async () => {
+    // VectorStore has no callers/callees (isolated) and is not a BM25 hit -> seeded but never
+    // expanded (structuralExpand excludes seeds), so today it never reaches the result. This is
+    // the reproduced bug shape: the queried symbol's own definition is missing from context.
+    const result = await retrieve('VectorStore', { bm25: emptyLeg, structural, chunks: chunkMap })
+    const hit = result.find((r) => r.chunk.id === vectorStoreChunk.id)
+    expect(hit).toBeDefined() // pinned at structural rank 0 -> fused into the result
+    expect(hit?.scores.structural).toBeGreaterThan(0)
+    expect(hit?.scores.bm25).toBe(0) // it was NOT a BM25 hit — the pin carried it
+  })
+
+  it('is a no-op when the query resolves no symbol (unchanged behaviour)', async () => {
+    // zero pins -> identical to the pre-pin path: a symbol-free, hit-free query stays empty.
+    const result = await retrieve('zzznotasymbol', { bm25: emptyLeg, structural, chunks: chunkMap })
+    expect(result).toEqual([])
+  })
+
+  it('does not duplicate or double-count a pinned chunk that is also a structural neighbour', async () => {
+    // searchIndex (a BM25 hit) neighbours rrfFuse; the query also names rrfFuse -> pinned. The
+    // chunk must appear exactly once (fuse dedupes by id; the pin dedupes within the leg).
+    const bm25 = leg([{ chunkId: searchIndexChunk.id, score: 5 }])
+    const result = await retrieve('rrfFuse', { bm25, structural, chunks: chunkMap })
+    expect(result.filter((r) => r.chunk.id === rrfFuseChunk.id)).toHaveLength(1)
+  })
+
+  it('keeps the result deterministic with the pin active', async () => {
+    const a = await retrieve('VectorStore', { bm25: emptyLeg, structural, chunks: chunkMap })
+    const b = await retrieve('VectorStore', { bm25: emptyLeg, structural, chunks: chunkMap })
+    expect(a).toEqual(b)
+  })
+
+  it('GUARANTEES the definition in top-k even when another leg floods it out (the safety net)', async () => {
+    // The RRF pin alone is not airtight: a strong dense leg can flood top-k with other chunks and
+    // push a pinned-but-otherwise-weak definition past the cutoff (observed with the real dense leg).
+    // The guaranteed slot keeps it in — this is the deterministic stand-in for that flood.
+    const flood = leg(
+      allChunks
+        .filter((c) => c.id !== vectorStoreChunk.id)
+        .map((c, i) => ({ chunkId: c.id, score: 1 - i * 0.01 })),
+    )
+    const result = await retrieve(
+      'VectorStore',
+      { bm25: emptyLeg, structural, chunks: chunkMap, dense: flood },
+      { k: 2 },
+    )
+    expect(result.some((r) => r.chunk.id === vectorStoreChunk.id)).toBe(true) // rescued into top-k
+    expect(result.length).toBeLessThanOrEqual(2)
+    const fused = result.map((r) => r.fused)
+    expect(fused).toEqual([...fused].sort((a, b) => b - a)) // still sorted desc by fused
+  })
+
+  it('does not displace a definition that already ranks inside top-k (no double presence)', async () => {
+    // when the def is naturally in top-k, the guarantee is a no-op: it appears exactly once.
+    const result = await retrieve('VectorStore', { bm25: emptyLeg, structural, chunks: chunkMap })
+    expect(result.filter((r) => r.chunk.id === vectorStoreChunk.id)).toHaveLength(1)
+  })
+})
+
 describe('retrieve — leg isolation (C2: one-leg-down is recoverable)', () => {
   it('isolates a synchronously-throwing dense leg — degrades to [] without sinking BM25 + structural', async () => {
     // the sharp case: a 768-vs-384 dim mismatch makes cosineSimilarity throw. The dense leg's throw
