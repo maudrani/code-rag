@@ -1,5 +1,6 @@
 import type { Engine, EngineConfig } from '../contracts/engine.js'
 import type { Projection, Turn } from '../contracts/projection.js'
+import type { Observable } from '../contracts/telemetry.js'
 import { createEngine } from '../package/index.js'
 
 /**
@@ -19,8 +20,12 @@ export function resolveEngineConfig(
   return resolved
 }
 
-/** buildEngine — the single place config becomes an Engine, so no two loaders drift. */
-export function buildEngine(config: EngineConfig = {}): Engine {
+/**
+ * buildEngine — the single place config becomes an Engine, so no two loaders drift.
+ * Returns `Engine & Observable` (what createEngine returns): the query/answer verbs
+ * PLUS the telemetry read-surface the stats/health/log transports need.
+ */
+export function buildEngine(config: EngineConfig = {}): Engine & Observable {
   return createEngine(resolveEngineConfig(config))
 }
 

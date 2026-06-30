@@ -7,3 +7,15 @@ export type { AskOptions, AskResult } from './actions.js'
 export { ask, buildEngine, resolveEngineConfig } from './actions.js'
 export type { ProjectionDTO, SerializedResult } from './serialize.js'
 export { serializeProjection } from './serialize.js'
+export type { LayerStats, LayerTelemetry, LogPayload, StatsLayer } from './telemetry.js'
+export {
+  CONSUMERS,
+  getHealth,
+  getLog,
+  getLogPayload,
+  getStats,
+  isConsumer,
+  isStatsLayer,
+  STATS_LAYERS,
+  selectLayer,
+} from './telemetry.js'

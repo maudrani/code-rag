@@ -3,8 +3,10 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
 import type { Engine } from '../contracts/engine.js'
+import type { Observable } from '../contracts/telemetry.js'
 import { queryRoutes } from './routes/query.js'
 import { searchRoutes } from './routes/search.js'
+import { telemetryRoutes } from './routes/telemetry.js'
 import { traceRoute } from './routes/ws-trace.js'
 
 const DEFAULT_PORT = 8787
@@ -24,7 +26,7 @@ export interface BuiltApp {
  * The Engine is a parameter (DI) so this is unit-testable with a mock and the
  * production entrypoint (server.ts) owns the real `createEngine` wiring.
  */
-export function buildApp(engine: Engine): BuiltApp {
+export function buildApp(engine: Engine & Observable): BuiltApp {
   const app = new Hono()
   // The standalone web UI runs on a different origin (the Vite dev server), so the
   // browser needs CORS to call this API (preflight + Access-Control-Allow-Origin).
@@ -32,11 +34,13 @@ export function buildApp(engine: Engine): BuiltApp {
   app.use('*', cors())
   const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app })
 
-  app.get('/health', (c) => c.json({ status: 'ok' }))
   // route() merges the sub-app routes into this app, so this app's onError /
   // notFound govern them too — one consistent error envelope across the surface.
   app.route('/', queryRoutes(engine))
   app.route('/', searchRoutes(engine))
+  // telemetry read-surfaces (GET /stats, /health, /log) — replaces the old stub /health
+  // with the real engine.health() (observability §5.2).
+  app.route('/', telemetryRoutes(engine))
   app.get('/ws/trace', traceRoute(engine, upgradeWebSocket))
 
   app.notFound((c) => c.json({ error: 'Not Found' }, 404))

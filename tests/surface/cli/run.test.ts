@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { EXIT } from '../../../src/cli/errors.js'
 import { run } from '../../../src/cli/run.js'
 import { buildEngine } from '../../../src/consume/index.js'
-import type { Engine } from '../../../src/contracts/engine.js'
 import { makeMockEngine } from '../fixtures/mock-engine.js'
 
 function capture() {
@@ -86,7 +85,7 @@ describe('run — TKT-411', () => {
 
   it('NEGATIVE: an engine error -> EXIT.ERROR, message to stderr (no raw stack)', async () => {
     const cap = capture()
-    const boom: Engine = {
+    const boom = {
       ...makeMockEngine(),
       query: () => Promise.reject(new Error('index unavailable')),
     }
@@ -102,7 +101,7 @@ describe('run — TKT-411', () => {
 
   it('NEGATIVE under --json: an engine error is emitted as JSON to stderr', async () => {
     const cap = capture()
-    const boom: Engine = {
+    const boom = {
       ...makeMockEngine(),
       query: () => Promise.reject(new Error('boom')),
     }

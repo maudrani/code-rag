@@ -3,7 +3,6 @@ import { createNodeWebSocket } from '@hono/node-ws'
 import { Hono } from 'hono'
 import { describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import type { Engine } from '../../../src/contracts/engine.js'
 import { traceRoute } from '../../../src/http/routes/ws-trace.js'
 import { makeShutdownHandler } from '../../../src/http/server.js'
 import { makeMockEngine } from '../fixtures/mock-engine.js'
@@ -13,9 +12,10 @@ describe('WS-trace transport lifecycle — TKT-416', () => {
     const base = makeMockEngine()
     let active = 0
     let maxActive = 0
-    const engine: Engine = {
+    // spread keeps the Observable methods (telemetry/replay/…) traceRoute now needs.
+    const engine = {
       ...base,
-      on(handler) {
+      on(handler: Parameters<typeof base.on>[0]) {
         active++
         maxActive = Math.max(maxActive, active)
         const unsub = base.on(handler)

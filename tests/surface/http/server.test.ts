@@ -5,11 +5,14 @@ import { buildApp, resolvePort } from '../../../src/http/app.js'
 import { makeMockEngine } from '../fixtures/mock-engine.js'
 
 describe('HTTP server bootstrap — TKT-407', () => {
-  it('GET /health -> 200 { status: "ok" }', async () => {
+  it('GET /health -> 200 + the real HealthReport from engine.health() (not the old stub)', async () => {
     const { app } = buildApp(makeMockEngine())
     const res = await app.request('/health')
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ status: 'ok' })
+    const body = (await res.json()) as { status: string; checks: Record<string, unknown> }
+    expect(body.status).toBe('ok')
+    // the real report carries per-check detail — proving the stub {status:'ok'} is gone.
+    expect(body.checks).toBeDefined()
   })
 
   it('mounts POST /search (not 404) -> WireProjection', async () => {

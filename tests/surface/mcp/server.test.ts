@@ -2,10 +2,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe, expect, it } from 'vitest'
 import type { Engine } from '../../../src/contracts/engine.js'
+import type { Observable } from '../../../src/contracts/telemetry.js'
 import { buildMcpServer } from '../../../src/mcp/server.js'
 import { makeMockEngine } from '../fixtures/mock-engine.js'
 
-async function connect(engine: Engine = makeMockEngine()) {
+async function connect(engine: Engine & Observable = makeMockEngine()) {
   const server = buildMcpServer(engine)
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   const client = new Client({ name: 'test-client', version: '0.0.0' })
@@ -14,10 +15,10 @@ async function connect(engine: Engine = makeMockEngine()) {
 }
 
 describe('buildMcpServer — real client round-trip (TKT-413)', () => {
-  it('registers exactly the `ask` + `search` tools', async () => {
+  it('registers the retrieval (ask, search) + telemetry (stats, health, log) tools', async () => {
     const { client, server } = await connect()
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name).sort()).toEqual(['ask', 'search'])
+    expect(tools.map((t) => t.name).sort()).toEqual(['ask', 'health', 'log', 'search', 'stats'])
     await server.close()
   })
 

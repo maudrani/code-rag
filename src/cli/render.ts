@@ -1,6 +1,8 @@
+import type { LayerStats } from '../consume/index.js'
 import { serializeProjection } from '../consume/serialize.js'
 import type { Citation, GateDecision, Projection } from '../contracts/projection.js'
 import type { RankedChunk } from '../contracts/retrieval.js'
+import type { EngineTelemetry, HealthReport, QueryLogEntry } from '../contracts/telemetry.js'
 
 const ESC = '\x1b'
 const COLORS = {
@@ -57,4 +59,40 @@ export function humanDry(p: Projection, useColor: boolean): string {
 /** jsonOut — the `--json` view: the serializeProjection DTO (one line, pipeable). */
 export function jsonOut(p: Projection): string {
   return JSON.stringify(serializeProjection(p))
+}
+
+// ─── telemetry surfaces (stats / health / log) ────────────────────────────────
+
+/** telemetryJson — the `--json` view for any telemetry payload (the parity-relevant output). */
+export function telemetryJson(value: unknown): string {
+  return JSON.stringify(value)
+}
+
+/** humanStats — the readable `stats` view (the struct is structured data; pretty JSON reads well). */
+export function humanStats(payload: EngineTelemetry | LayerStats): string {
+  return `${JSON.stringify(payload, null, 2)}\n`
+}
+
+const STATUS_COLOR: Record<HealthReport['status'], keyof typeof COLORS> = {
+  ok: 'green',
+  degraded: 'dim',
+  down: 'red',
+}
+
+/** humanHealth — the readable `health` view: the status line + each check. */
+export function humanHealth(h: HealthReport, useColor: boolean): string {
+  const checks = Object.entries(h.checks)
+    .map(([name, c]) => `  ${c.ok ? '✓' : '✗'} ${name}${c.detail ? ` — ${c.detail}` : ''}`)
+    .join('\n')
+  return `${paint(h.status, STATUS_COLOR[h.status], useColor)}\n${checks}\n`
+}
+
+/** humanLog — the readable `log` view: one line per ledger entry (newest-first as returned). */
+export function humanLog(entries: QueryLogEntry[], useColor: boolean): string {
+  if (entries.length === 0) return `${paint('(no queries logged)', 'dim', useColor)}\n`
+  const lines = entries.map(
+    (e) =>
+      `  ${e.queryId} [${e.consumer}] ${paint(e.band, BAND_COLOR[e.band], useColor)} ${e.latencyMs}ms — ${e.query}`,
+  )
+  return `${lines.join('\n')}\n`
 }
