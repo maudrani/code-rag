@@ -22,12 +22,16 @@ import { type SkippedFile, type WalkOptions, walk } from '../ingest/walker.js'
 import { chunkTree } from './chunker.js'
 import { createParser } from './parser.js'
 
+export { collectIngestTelemetry, type IngestTelemetryInput } from '../ingest/telemetry.js'
 export { chunkSource, chunkTree } from './chunker.js'
 export { createParser, initParser, parse } from './parser.js'
 export {
   buildImportTable,
   extractStructuralRefs,
 } from './structural-refs.js'
+// Per-layer telemetry collectors (FTR-12, ratified seam): pure, master-owned-contract
+// shaped. The membrane calls these + holds them in Observable.telemetry().{ingest,chunk}.
+export { collectChunkTelemetry } from './telemetry.js'
 
 export interface IngestChunkResult {
   chunks: Chunk[]
