@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ANSWER_GATES } from '../../src/answer/telemetry.js'
 import { SURFACE_GATES } from '../../src/consume/gates.js'
+import { INGEST_GATES } from '../../src/ingest/gates.js'
 import {
   auditRegistry,
   createGateRegistry,
@@ -63,13 +64,15 @@ describe('gate registry — the anti-vacuity audit (adopts peripheral claim-gate
 })
 
 describe('default registry — every layer folded into the anti-vacuity seam', () => {
-  it('includes the membrane/answer/surface/retrieve gate ids, all backed, gap-free', () => {
+  it('includes the membrane/answer/surface/retrieve/ingest/chunk gate ids, all backed, gap-free', () => {
     const ids = auditRegistry().map((v) => v.id)
     // one representative DECLARED id per folded layer must be present in the default singleton:
     expect(ids).toContain('membrane.telemetry')
     expect(ids).toContain('answer.telemetry')
     expect(ids).toContain('surface.stats')
     expect(ids).toContain('L4.scoresByLeg')
+    expect(ids).toContain('ingest.telemetry')
+    expect(ids).toContain('chunk.telemetry')
     expect(auditRegistry().every((v) => v.status === 'pass')).toBe(true)
     expect(registryHasGap()).toBe(false) // every layer's gates are backed + exercised
   })
@@ -81,6 +84,7 @@ describe('default registry — every layer folded into the anti-vacuity seam', (
       ...ANSWER_GATES,
       ...SURFACE_GATES,
       ...RETRIEVE_GATES,
+      ...INGEST_GATES,
     ])
     expect(folded.registryHasGap()).toBe(false) // the real fold is gap-free
     folded.registerGate({ id: 'unbacked.bogus', claim: 'declared, never gated', layer: 'x' })

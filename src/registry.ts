@@ -17,6 +17,7 @@
 
 import { ANSWER_GATES } from './answer/telemetry.js'
 import { SURFACE_GATES } from './consume/gates.js'
+import { INGEST_GATES } from './ingest/gates.js'
 import { RETRIEVE_GATES } from './retrieve/telemetry.js'
 
 /** A single registered gate: a declared behavior + the standing test that backs it. */
@@ -144,6 +145,7 @@ function getDefaultRegistry(): GateRegistry {
     ...ANSWER_GATES,
     ...SURFACE_GATES,
     ...RETRIEVE_GATES,
+    ...INGEST_GATES, // L1/L2 now in the global audit
   ])
   return defaultRegistry
 }
