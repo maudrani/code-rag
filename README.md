@@ -28,7 +28,7 @@ That gives a pipeline that runs left-to-right from fully deterministic to probab
    (+rewrite)             sitter     (1 SQLite)    parallel    gate       LLM call)
 ```
 
-Everything up to L5 is exact and tested (333 tests). **L5 is the only place a model
+Everything up to L5 is exact and tested (427 tests). **L5 is the only place a model
 runs**, and even there a deterministic score-gate decides *whether* it runs at all and
 *which* model. The payoff: answers are reproducible up to the generation step,
 ungrounded questions are refused instead of hallucinated, and every query emits a
@@ -51,8 +51,9 @@ other's internals — which is what let the layers be built in parallel and stil
 integrate cleanly.
 
 **Consumer-agnostic.** That one `Projection` feeds every consumer unchanged: the Node
-package (in-process), the HTTP/SSE server, and the browser UI — with MCP and a
-`--dry` CLI designed to drop in behind the same projection (see *Productionize*).
+package (in-process), the HTTP/SSE server, the browser UI, a terminal **CLI**, and an
+**MCP server** — five consumers behind one projection, and adding the CLI and MCP took
+**zero** core change (the engine already split `query` from `answer` for exactly this).
 
 **No orchestration framework, on purpose.** No LangChain / LlamaIndex. The gradient
 *is* the orchestration — explicit, typed, and testable control flow. A framework would
@@ -69,6 +70,9 @@ src/
   provider/    the Claude provider (streamed answer + anaphora rewrite)
   membrane/    createEngine — the master-owned seam that composes it all
   http/        the surface: SSE /query, JSON /search, WS /ws/trace
+  consume/     the shared verbs the CLI + MCP bind (buildEngine · ask · serializeProjection)
+  cli/         code-rag ask <query> [--dry --json] — the deterministic path needs no key
+  mcp/         MCP server: ask + search tools over stdio, projection as structuredContent
   bus/ package/ event bus + the package Consumer API
 web/           standalone React UI (chat · citations · live trace · manual search)
 ```
@@ -126,6 +130,20 @@ Only on `answer` does the provider stream tokens; the final `L5` event carries t
 to answer only from the retrieved context, deterministic citations built from the
 retrieval (with a post-check available), and the refuse path.
 
+**Measured, not estimated.** Three real questions through the CLI
+([`scripts/cost-dogfood.ts`](scripts/cost-dogfood.ts)) — all three routed to `strong`,
+because the gate's OR-escalation (2+ files in context *or* a reasoning word like *how*)
+deliberately prefers quality over saving a cent:
+
+| path | model | cost / query |
+|------|-------|--------------|
+| `--dry` · `search` · the MCP retrieval tool | none | **$0** — no model runs |
+| answer, substantive question (`strong`) | sonnet-4-6 | **~$0.027** (measured) |
+| answer, trivial single-file lookup (`cheap`) | haiku-4-5 | ~$0.009 (cost model) |
+
+So the determinism gradient is also a *cost* gradient: everything left of L5 is free, and
+even L5 is gated to the smallest model that fits.
+
 ---
 
 ## Run it
@@ -143,6 +161,15 @@ cd web && npm install
 VITE_API_BASE=http://localhost:8787 npm run dev
 ```
 
+```bash
+# the same engine in the terminal — --dry is deterministic, no key, $0
+npm run cli -- ask "how does retrieval fuse the legs" --dry
+ANTHROPIC_API_KEY=sk-... npm run cli -- ask "how does the score gate work"
+
+# or as an MCP server for an editor agent (Claude Code / Cursor) — see examples/mcp.json
+npm run mcp
+```
+
 Open the printed Vite URL: streaming chat with a grounding/cost badge, clickable
 citations into a source viewer, a live L0→L5 trace rail, and a manual-search tab that
 shows the per-leg scores. The whole pipeline is also usable in-process via the package
@@ -153,7 +180,7 @@ shows the per-leg scores. The whole pipeline is also usable in-process via the p
 ## Engineering standards
 
 - **TypeScript strict**, **Biome** (lint + format), **vitest** (TDD, red→green).
-  **333 tests**; the critical paths — membrane, retrieval fusion, the score-gate, the
+  **427 tests**; the critical paths — membrane, retrieval fusion, the score-gate, the
   guardrails, the wire — get edge + negative coverage.
 - **CI** gates the backend (Biome + tsc + vitest) and the web build, on every push.
 - **A commit pipeline built for AI-authored commits** (husky + commitlint + Biome on
@@ -186,13 +213,15 @@ history stays a clean, attributed, per-layer narrative.
 
 - **Cost** is score-gated (refuse / cheap / strong) and metered per query via the L5
   event. A metered API key suits a self-hosted deploy; an MCP-subscription surface
-  (designed, see below) suits an editor-embedded one.
+  (the built MCP server) suits an editor-embedded one.
 - **Retrieval** scales brute-force cosine → `sqlite-vec` → `pgvector` / Qdrant without
   touching the membrane (the legs are injected).
 - **Embeddings** upgrade MiniLM → `jina-v2-base-code` / Voyage-code-3 in one config line.
-- **Surface** — the consumer-agnostic `Projection` means **MCP** (M2) and a **`--dry`
-  CLI** (M3, full pipeline, zero LLM cost) drop in behind it; the HTTP path packages
-  as a `dist` build + Docker (copying the tree-sitter grammar into `dist`).
+- **Surface** — all five consumers ship behind the one `Projection`: package, HTTP/SSE,
+  web UI, **CLI**, and **MCP**. The MCP server is the editor-embedded cost story — an agent
+  on a Claude/Cursor subscription runs `ask`/`search` at **no per-call API cost**; the
+  metered API path (the numbers above) suits a self-hosted deploy. Remaining: package the
+  compiled bin as a `dist` build + Docker (copying the tree-sitter grammar into `dist`).
 
 ---
 
@@ -205,7 +234,8 @@ history stays a clean, attributed, per-layer narrative.
 - **Structural eval is a floor** — the gold set targets symbol *definitions*, so it
   under-counts the structural leg's real value on "where is X used / how does this
   subsystem work" queries.
-- **M2 MCP + M3 CLI** are designed against the projection but not built.
+- **Compiled-bin packaging** — the CLI + MCP run via `tsx` today (`npm run cli` / `mcp`);
+  the published `dist` bin additionally needs the tree-sitter `.wasm` copied into `dist`.
 - **Grounding is lexical** — the next precision lever is a raw-cosine or cross-encoder
   **reranker** signal applied after fusion on the top-K (the dogfood showed RRF ranks
   can't ground).
