@@ -67,10 +67,32 @@ function resolveRelativeImport(importerPath: string, spec: string): string | und
   return stripExt(normalizePosix(`${dir}/${spec}`))
 }
 
+/**
+ * Short name of a (possibly qualified) symbol — the last descriptor: `Auth.login` → `login`,
+ * `parse` → `parse`. The chunker keys a method as `Class.method`, but `structuralRefs.calls`
+ * captures the bare property name for `o.m()`, so the call graph needs this short-name bucket to
+ * resolve method calls (peripheral codegraph's `name` = "last descriptor in symbol", GAP A1).
+ */
+function shortNameOf(symbol: string): string {
+  const dot = symbol.lastIndexOf('.')
+  return dot >= 0 ? symbol.slice(dot + 1) : symbol
+}
+
+/** The in-corpus files (ext-less paths) a chunk imports via RELATIVE specifiers (bare = external). */
+function importedPaths(chunk: Chunk): Set<string> {
+  const paths = new Set<string>()
+  for (const spec of chunk.structuralRefs.imports) {
+    const key = resolveRelativeImport(chunk.path, spec)
+    if (key !== undefined) paths.add(key)
+  }
+  return paths
+}
+
 /** Build the structural index (call + import graph) from a Chunk[] corpus. */
 export function buildStructuralIndex(chunks: readonly Chunk[]): StructuralIndex {
   const byId = new Map<string, Chunk>()
   const definers = new Map<string, string[]>()
+  const byName = new Map<string, string[]>() // SHORT name (last descriptor) → defining chunk ids (A1)
   const byPathNoExt = new Map<string, string[]>() // file (ext-less) → its chunk ids
 
   for (const chunk of chunks) {
@@ -78,6 +100,10 @@ export function buildStructuralIndex(chunks: readonly Chunk[]): StructuralIndex 
     const defs = definers.get(chunk.symbol)
     if (defs === undefined) definers.set(chunk.symbol, [chunk.id])
     else defs.push(chunk.id)
+    const short = shortNameOf(chunk.symbol)
+    const named = byName.get(short)
+    if (named === undefined) byName.set(short, [chunk.id])
+    else named.push(chunk.id)
     const key = stripExt(chunk.path)
     const sameFile = byPathNoExt.get(key)
     if (sameFile === undefined) byPathNoExt.set(key, [chunk.id])
@@ -102,10 +128,24 @@ export function buildStructuralIndex(chunks: readonly Chunk[]): StructuralIndex 
   }
 
   for (const chunk of chunks) {
-    // call edges: callee symbol name → the chunk(s) that define it (precise within the corpus)
+    // call edges: resolve a callee SYMBOL name to its defining chunk(s) —
+    //   1. exact full-symbol match: a direct call `f()` whose captured name IS the symbol; else
+    //   2. short-name match: a method call `o.m()` captures the bare property `m`, while the chunker
+    //      keys the definer as `Class.m` (peripheral codegraph short-name resolution, GAP A1).
+    // A multi-definer name is disambiguated against the importer's import table, keeping only the
+    // imported definer; with nothing to resolve it, all are kept (peripheral `exact`/`probable`/
+    // `ambiguous` confidence — codegraph 05-API-SURFACE §E.4, GAP A3).
+    const imported = importedPaths(chunk)
     for (const callee of chunk.structuralRefs.calls) {
-      const targets = definers.get(callee)
+      let targets = definers.get(callee) ?? byName.get(callee)
       if (targets === undefined) continue // dangling / external symbol — no edge
+      if (targets.length > 1) {
+        const disambiguated = targets.filter((id) => {
+          const def = byId.get(id)
+          return def !== undefined && imported.has(stripExt(def.path))
+        })
+        if (disambiguated.length > 0) targets = disambiguated // import table pruned to the import
+      }
       for (const target of targets) link(chunk.id, target)
     }
     // import edges: relative module specifier → the imported file's chunks (bare = external, skipped)

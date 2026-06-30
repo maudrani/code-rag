@@ -25,16 +25,33 @@ export interface GoldQuery {
   relevant: RelevanceFn
 }
 
-/** recall@k = |relevant ∩ top-k| / |relevant in corpus|. 0 when nothing relevant exists. */
+/**
+ * Distinct-by-chunk-id view of a ranking — first occurrence wins, rank order preserved. Guards the
+ * IR metrics against a ranking that repeats a chunk id, which would otherwise count the same hit
+ * twice and push recall / nDCG out of [0,1] (peripheral rag-eval-harness contract: "duplicate ids
+ * counted once" — rag-eval-harness/01-VISION.md, GAP C1).
+ */
+function dedupeById(ranked: RetrievalResult): RetrievalResult {
+  const seen = new Set<string>()
+  const out: RetrievalResult = []
+  for (const r of ranked) {
+    if (seen.has(r.chunk.id)) continue
+    seen.add(r.chunk.id)
+    out.push(r)
+  }
+  return out
+}
+
+/** recall@k = |relevant ∩ top-k| / |relevant in corpus|. 0 when nothing relevant exists or k<=0. */
 export function recallAtK(
   ranked: RetrievalResult,
   isRelevant: RelevanceFn,
   k: number,
   relevantTotal: number,
 ): number {
-  if (relevantTotal <= 0) return 0
+  if (relevantTotal <= 0 || k <= 0) return 0 // k<=0 guards a negative-index slice leak (GAP C1)
   let hits = 0
-  for (const r of ranked.slice(0, k)) if (isRelevant(r.chunk)) hits++
+  for (const r of dedupeById(ranked).slice(0, k)) if (isRelevant(r.chunk)) hits++
   return hits / relevantTotal
 }
 
@@ -47,15 +64,16 @@ export function reciprocalRank(ranked: RetrievalResult, isRelevant: RelevanceFn)
   return 0
 }
 
-/** nDCG@k with binary relevance: DCG@k / ideal-DCG@k (ideal = all relevant first). */
+/** nDCG@k with binary relevance: DCG@k / ideal-DCG@k (ideal = all relevant first). 0 when k<=0. */
 export function ndcgAtK(
   ranked: RetrievalResult,
   isRelevant: RelevanceFn,
   k: number,
   relevantTotal: number,
 ): number {
+  if (k <= 0) return 0 // k<=0 guards a negative-index slice leak (GAP C1)
   let dcg = 0
-  const top = ranked.slice(0, k)
+  const top = dedupeById(ranked).slice(0, k) // duplicate ids counted once ⇒ dcg <= idcg ⇒ ndcg in [0,1]
   for (let i = 0; i < top.length; i++) {
     const r = top[i]
     if (r !== undefined && isRelevant(r.chunk)) dcg += 1 / Math.log2(i + 2)

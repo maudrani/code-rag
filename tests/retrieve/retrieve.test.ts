@@ -154,3 +154,46 @@ describe('retrieve — edge + negative cases', () => {
     )
   })
 })
+
+describe('retrieve — leg isolation (C2: one-leg-down is recoverable)', () => {
+  it('isolates a synchronously-throwing dense leg — degrades to [] without sinking BM25 + structural', async () => {
+    // the sharp case: a 768-vs-384 dim mismatch makes cosineSimilarity throw. The dense leg's throw
+    // must NOT reject the whole retrieve (peripheral vector-adapter NT-10 — one-leg-down recoverable).
+    const throwingDense: LexicalLeg = {
+      search: () => {
+        throw new Error('cosineSimilarity: dimension mismatch 768 vs 384.')
+      },
+    }
+    const bm25 = new Bm25Index()
+    bm25.index(allChunks)
+    const result = await retrieve('searchIndex', {
+      bm25,
+      structural,
+      chunks: chunkMap,
+      dense: throwingDense,
+    })
+    expect(result.length).toBeGreaterThan(0)
+    expect(result.some((r) => r.chunk.id === searchIndexChunk.id)).toBe(true) // BM25 still carried it
+    for (const r of result) expect(r.scores.dense).toBe(0) // dense degraded to []
+    bm25.close()
+  })
+
+  it('isolates an asynchronously-rejecting dense leg (the real ONNX/jina failure path)', async () => {
+    const rejectingDense: LexicalLeg = {
+      search: async () => {
+        throw new Error('dimension mismatch')
+      },
+    }
+    const bm25 = new Bm25Index()
+    bm25.index(allChunks)
+    const result = await retrieve('searchIndex', {
+      bm25,
+      structural,
+      chunks: chunkMap,
+      dense: rejectingDense,
+    })
+    expect(result.length).toBeGreaterThan(0)
+    for (const r of result) expect(r.scores.dense).toBe(0)
+    bm25.close()
+  })
+})

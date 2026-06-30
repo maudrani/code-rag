@@ -183,3 +183,62 @@ describe('structuralExpand — edge + negative cases', () => {
     expect(out).toEqual([{ chunkId: c1, score: 1 }])
   })
 })
+
+describe('buildStructuralIndex — method-call resolution (A1: short-name resolution)', () => {
+  it('resolves a bare method call o.m() to a Class.method definer (the dominant TS case)', () => {
+    // The chunker keys a method as `Class.method` (chunker.ts), but structural-refs captures the
+    // bare property name `login` for `a.login()` (structural-refs.ts). Without a short-name bucket,
+    // definers.get('login') misses Auth.login ⇒ EMPTY neighbours for the dominant o.m() call shape.
+    const auth = mk('src/auth.ts', 'Auth.login', { calls: [], imports: [] })
+    const caller = mk('src/caller.ts', 'caller', { calls: ['login'], imports: [] })
+    const index = buildStructuralIndex([auth, caller])
+    expect(index.neighbours.get(caller.id)?.has(auth.id)).toBe(true) // resolved via short name
+    expect(index.neighbours.get(auth.id)?.has(caller.id)).toBe(true) // undirected one-hop
+  })
+
+  it('prefers an exact full-symbol match over the short-name fallback (direct call f())', () => {
+    // a top-level `parse` AND a method `X.parse`; a bare call `parse` resolves to the exact symbol.
+    const fn = mk('src/p.ts', 'parse', { calls: [], imports: [] })
+    const method = mk('src/x.ts', 'X.parse', { calls: [], imports: [] })
+    const caller = mk('src/c.ts', 'caller', { calls: ['parse'], imports: [] })
+    const index = buildStructuralIndex([fn, method, caller])
+    expect(index.neighbours.get(caller.id)?.has(fn.id)).toBe(true) // exact wins
+    expect(index.neighbours.get(caller.id)?.has(method.id) ?? false).toBe(false)
+  })
+})
+
+describe('buildStructuralIndex — multi-definer disambiguation (A3: import-table prune)', () => {
+  it('prunes a multi-definer call to the imported definer (no spurious cross-file edge)', () => {
+    // two files define `parse`; a third imports parse from ./a and calls it ⇒ only a#parse links.
+    const a = mk('src/a.ts', 'parse', { calls: [], imports: [] })
+    const b = mk('src/b.ts', 'parse', { calls: [], imports: [] })
+    const c = mk('src/c.ts', 'caller', { calls: ['parse'], imports: ['./a'] })
+    const index = buildStructuralIndex([a, b, c])
+    expect(index.neighbours.get(c.id)?.has(a.id)).toBe(true)
+    expect(index.neighbours.get(c.id)?.has(b.id) ?? false).toBe(false) // pruned — c imports ./a only
+  })
+
+  it('keeps all definers when the import table cannot disambiguate (ambiguous fallback)', () => {
+    // c imports neither file ⇒ genuinely ambiguous ⇒ keep both (recall-preserving, peripheral
+    // codegraph `ambiguous` confidence — 05-API-SURFACE.md §E.4).
+    const a = mk('src/a.ts', 'parse', { calls: [], imports: [] })
+    const b = mk('src/b.ts', 'parse', { calls: [], imports: [] })
+    const c = mk('src/c.ts', 'caller', { calls: ['parse'], imports: [] })
+    const index = buildStructuralIndex([a, b, c])
+    expect(index.neighbours.get(c.id)?.has(a.id)).toBe(true)
+    expect(index.neighbours.get(c.id)?.has(b.id)).toBe(true)
+  })
+
+  it('short-name resolves a bare method call across same-named methods; ambiguous fallback (A1 + A3)', () => {
+    // two classes define `login`; caller calls o.login() with NO import to disambiguate. Short-name
+    // resolution finds BOTH `Class.login` definers (the A1 fix — the old code matched NEITHER), and
+    // with nothing to prune on, both are kept (the A3 ambiguous fallback). No import edge confounds
+    // this — caller imports nothing, so every neighbour here comes from the call graph.
+    const auth = mk('src/auth.ts', 'Auth.login', { calls: [], imports: [] })
+    const session = mk('src/session.ts', 'Session.login', { calls: [], imports: [] })
+    const caller = mk('src/c.ts', 'caller', { calls: ['login'], imports: [] })
+    const index = buildStructuralIndex([auth, session, caller])
+    expect(index.neighbours.get(caller.id)?.has(auth.id)).toBe(true)
+    expect(index.neighbours.get(caller.id)?.has(session.id)).toBe(true)
+  })
+})

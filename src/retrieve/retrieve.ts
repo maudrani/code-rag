@@ -44,6 +44,27 @@ export interface RetrieveOptions {
   rrf?: RrfConfig
 }
 
+/**
+ * Run a leg, degrading ANY failure — a synchronous throw or an async rejection — to `[]` so a single
+ * leg can't sink the whole retrieve. Adopts peripheral vector-adapter's NT-10 "one-leg-down is
+ * recoverable" (vector-adapter-parallel-rrf/05-DESIGN.md, GAP C2): the sharp case is a vector
+ * dimension mismatch (e.g. a jina 768-vs-384 upgrade) making the dense leg's cosineSimilarity throw —
+ * under the bare `Promise.all` that rejection would reject the entire query instead of just dropping
+ * the dense signal. BM25 + structural still answer.
+ */
+async function runLegSafely(
+  leg: LexicalLeg | undefined,
+  query: string,
+  limit: number,
+): Promise<LegCandidate[]> {
+  if (leg === undefined) return []
+  try {
+    return await leg.search(query, limit)
+  } catch {
+    return [] // degrade this leg; the other legs carry the query (parallel, not all-or-nothing)
+  }
+}
+
 /** Run the three legs in parallel, fuse, return the top-`k` RetrievalResult. */
 export async function retrieve(
   query: string,
@@ -56,12 +77,11 @@ export async function retrieve(
   const rrf = options.rrf ?? DEFAULT_RRF_CONFIG
   const pool = k * candidateMultiplier
 
-  // direct-hit legs run in parallel — none gates another (ADR-003 parallel-not-cascade)
+  // direct-hit legs run in parallel — none gates another (ADR-003 parallel-not-cascade). The dense
+  // leg is isolated (GAP C2): a throw/rejection degrades it to [] rather than rejecting the retrieve.
   const [bm25, dense] = await Promise.all([
     Promise.resolve(deps.bm25.search(query, pool)),
-    deps.dense
-      ? Promise.resolve(deps.dense.search(query, pool))
-      : Promise.resolve<LegCandidate[]>([]),
+    runLegSafely(deps.dense, query, pool),
   ])
 
   // structural seeds = BM25 top-N ∪ dense top-N ∪ exact symbol-name match (the direct hits)

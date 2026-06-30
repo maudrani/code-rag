@@ -9,6 +9,7 @@
  *     recovers the zero-id (BM25-blind) bucket — the empirical case for parallel-not-cascade.
  */
 import { fileURLToPath } from 'node:url'
+import fc from 'fast-check'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { ingestAndChunk, initParser } from '../../src/chunk/index.js'
 import type { Chunk } from '../../src/contracts/chunk.js'
@@ -20,6 +21,7 @@ import {
   formatReport,
   type GoldQuery,
   ndcgAtK,
+  type RelevanceFn,
   recallAtK,
   reciprocalRank,
   scoreQuery,
@@ -264,5 +266,96 @@ describe('retrieval eval over the self-indexed src/ corpus', () => {
       expect(recall.get('mixed') ?? 0).toBeGreaterThanOrEqual(0.6)
       expect(full.overall.recallAtK).toBeGreaterThan(offline.overall.recallAtK) // dense pays off
     }, 300_000)
+  })
+})
+
+// ── C1: metric invariants (contract guards + fast-check property floor) ────────
+describe('IR metric invariants (C1: contract guards)', () => {
+  it('recall@k returns 0 for a non-positive k (no negative-index slice leak)', () => {
+    expect(recallAtK(ranked(['target', 'a']), isTarget, 0, 1)).toBe(0)
+    expect(recallAtK(ranked(['target', 'a']), isTarget, -1, 1)).toBe(0) // was 1 via slice(0,-1)
+  })
+
+  it('ndcg@k returns 0 for a non-positive k', () => {
+    expect(ndcgAtK(ranked(['target']), isTarget, 0, 1)).toBe(0)
+    expect(ndcgAtK(ranked(['target']), isTarget, -1, 1)).toBe(0)
+  })
+
+  it('counts duplicate relevant ids once — recall stays in [0,1]', () => {
+    // a ranking that repeats the one relevant chunk must not score recall 3/1 = 3
+    expect(recallAtK(ranked(['target', 'target', 'target']), isTarget, 10, 1)).toBe(1)
+  })
+
+  it('counts duplicate relevant ids once — ndcg stays in [0,1]', () => {
+    expect(ndcgAtK(ranked(['target', 'target', 'target']), isTarget, 10, 1)).toBe(1) // was > 1
+  })
+})
+
+describe('IR metric invariants under fast-check (C1: property-based floor)', () => {
+  // Model a corpus + a relevance subset + a (possibly duplicate-laden, partial, shuffled) ranking,
+  // mirroring real harness usage (relevantTotal = |relevant in corpus|, ranking ⊆ corpus).
+  const scenario = fc
+    .uniqueArray(fc.string({ minLength: 1, maxLength: 4 }), { minLength: 1, maxLength: 10 })
+    .chain((ids) =>
+      fc.record({
+        relevant: fc.subarray(ids),
+        rankingIds: fc.array(fc.constantFrom(...ids), { maxLength: 20 }),
+        k: fc.integer({ min: -3, max: 15 }),
+      }),
+    )
+
+  it('recall/ndcg/rr ∈ [0,1] & never NaN; recall monotonic non-decreasing in k; k<=0 → 0', () => {
+    fc.assert(
+      fc.property(scenario, ({ relevant, rankingIds, k }) => {
+        const relevantSet = new Set(relevant)
+        const isRel: RelevanceFn = (c) => relevantSet.has(c.id)
+        const total = relevantSet.size
+        const r = ranked(rankingIds)
+        const recall = recallAtK(r, isRel, k, total)
+        const ndcg = ndcgAtK(r, isRel, k, total)
+        const rr = reciprocalRank(r, isRel)
+        for (const m of [recall, ndcg, rr]) {
+          expect(Number.isNaN(m)).toBe(false)
+          expect(m).toBeGreaterThanOrEqual(0)
+          expect(m).toBeLessThanOrEqual(1)
+        }
+        if (k <= 0) {
+          expect(recall).toBe(0)
+          expect(ndcg).toBe(0)
+        }
+        expect(recallAtK(r, isRel, k + 1, total)).toBeGreaterThanOrEqual(recall) // monotonic in k
+      }),
+    )
+  })
+
+  it('duplicate ids are counted once — a repeated ranking scores identically', () => {
+    fc.assert(
+      fc.property(scenario, ({ relevant, rankingIds }) => {
+        const relevantSet = new Set(relevant)
+        const isRel: RelevanceFn = (c) => relevantSet.has(c.id)
+        const total = relevantSet.size
+        const kBig = 1000
+        const once = ranked(rankingIds)
+        const twice = ranked([...rankingIds, ...rankingIds])
+        expect(recallAtK(twice, isRel, kBig, total)).toBe(recallAtK(once, isRel, kBig, total))
+        expect(ndcgAtK(twice, isRel, kBig, total)).toBeCloseTo(
+          ndcgAtK(once, isRel, kBig, total),
+          10,
+        )
+      }),
+    )
+  })
+
+  it('empty ranking and empty relevant set both score 0 (never NaN)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 10 }), (k) => {
+        const allRel: RelevanceFn = () => true
+        const noneRel: RelevanceFn = () => false
+        expect(recallAtK([], allRel, k, 3)).toBe(0) // empty ranking
+        expect(ndcgAtK([], allRel, k, 3)).toBe(0)
+        expect(recallAtK(ranked(['x']), noneRel, k, 0)).toBe(0) // empty relevant set (total 0)
+        expect(ndcgAtK(ranked(['x']), noneRel, k, 0)).toBe(0)
+      }),
+    )
   })
 })
