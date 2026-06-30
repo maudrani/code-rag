@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "code-rag": "dist/src/cli/index.js"
+  },
   "description": "Conversational RAG assistant over a codebase — answers how code works / where things live / endpoints / deps, grounded in retrieved code with clickable citations. Deterministic-gradient architecture. (NewPage FDE take-home; product name is a placeholder.)",
   "engines": {
     "node": ">=20"
@@ -26,9 +29,11 @@
     "@hono/node-server": "^1.13.0",
     "@hono/node-ws": "^1.0.4",
     "@huggingface/transformers": "^3.3.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.8.0",
     "hono": "^4.6.0",
-    "web-tree-sitter": "^0.24.0"
+    "web-tree-sitter": "^0.24.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
