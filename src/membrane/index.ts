@@ -4,14 +4,23 @@ import { createBus } from '../bus/index.js'
 import { ingestAndChunk, initParser } from '../chunk/index.js'
 import type {
   AnswerChunk,
+  AnswerTelemetry,
+  Consumer,
   ConsumerIntent,
   CreateEngine,
   Engine,
   EngineConfig,
+  EngineTelemetry,
   Event,
+  HealthReport,
+  IndexTelemetry,
   IngestReport,
+  IngestTelemetry,
+  Leg,
+  Observable,
   Projection,
   Provider,
+  QueryLogEntry,
   Turn,
   Unsubscribe,
 } from '../contracts/index.js'
@@ -33,7 +42,15 @@ import { needsRewrite } from './resolve.js'
 const DEFAULT_CORPUS = '.'
 const TOP_K = 10
 
-export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine => {
+/** Events buffered per queryId before the oldest is evicted (the replay backlog cap). */
+const REPLAY_CAP = 50
+
+/** Map the reading consumer's intent to its ledger Consumer ('cli-dry' -> 'cli', else as-is). */
+function mapConsumer(intent: ConsumerIntent): Consumer {
+  return intent === 'cli-dry' ? 'cli' : intent
+}
+
+export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & Observable => {
   const bus = createBus()
   const corpusPath = config.corpusPath ?? DEFAULT_CORPUS
 
@@ -52,6 +69,32 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine =>
   let indexing: Promise<IngestReport> | null = null
   let queryCounter = 0
 
+  // ─── observability state (master-owned seam; telemetry.ts) ────────────────────────────
+  // The holding (non-per-query) telemetry, the per-query ledger, and the last L5 telemetry.
+  let ingestTelemetry: IngestTelemetry | null = null
+  let indexBuiltAt: number | null = null
+  const ledger: QueryLogEntry[] = []
+  let lastAnswer: { queryId: string; telemetry: AnswerTelemetry } | null = null
+
+  // Ring buffer of events per queryId. The membrane subscribes to its OWN bus at construction,
+  // so every event is captured from L0 onward; a client that subscribes LATE (after L0–L4 have
+  // already fired) calls replay(queryId) to drain this backlog, then on() to tail live. THIS is
+  // the fix for the trace late-subscriber race (telemetry.ts §4).
+  const replayBuffer = new Map<string, Event[]>()
+  bus.on((event) => {
+    let buf = replayBuffer.get(event.queryId)
+    if (buf === undefined) {
+      buf = []
+      replayBuffer.set(event.queryId, buf)
+      // Map preserves insertion order: evict the oldest queryId once past the cap.
+      if (replayBuffer.size > REPLAY_CAP) {
+        const oldest = replayBuffer.keys().next().value
+        if (oldest !== undefined) replayBuffer.delete(oldest)
+      }
+    }
+    buf.push(event)
+  })
+
   async function ingest(repoPath: string = corpusPath): Promise<IngestReport> {
     const started = Date.now()
     await initParser() // async tree-sitter init — required before chunking
@@ -66,7 +109,24 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine =>
       chunks: new Map(chunks.map((c) => [c.id, c])),
     }
     ingestStats = { filesIndexed: files.length, chunks: chunks.length }
-    return { ...ingestStats, durationMs: Date.now() - started }
+
+    // Hold the per-layer telemetry the Observable surface reads. skipped/errors stay 0/[]
+    // until the ingest specialist enriches them (RULE-019); meanwhile the IngestTelemetry
+    // invariant `filesWalked === filesIndexed + skipped + errors.length` is kept honest.
+    const byLang: Record<string, number> = {}
+    for (const c of chunks) byLang[c.lang] = (byLang[c.lang] ?? 0) + 1
+    const durationMs = Date.now() - started
+    ingestTelemetry = {
+      filesWalked: files.length,
+      filesIndexed: files.length,
+      skipped: 0,
+      chunks: chunks.length,
+      byLang,
+      errors: [],
+      durationMs,
+    }
+    indexBuiltAt = Date.now()
+    return { ...ingestStats, durationMs }
   }
 
   // Lazy single-flight self-index: a consumer that queries before calling ingest() gets
@@ -89,8 +149,9 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine =>
   async function query(
     question: string,
     history: Turn[],
-    _intent: ConsumerIntent,
+    intent: ConsumerIntent,
   ): Promise<Projection> {
+    const queryStart = Date.now()
     const ready = await ensureIndexed()
     const queryId = `q${++queryCounter}`
 
@@ -131,6 +192,23 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine =>
         citations: projection.citations.length,
       },
     })
+
+    // L4 ledger entry — the cross-consumer record (adopt peripheral QueryLogEntry; scoresByLeg
+    // + consumer are novel here). scoresByLeg mirrors the TOP result's per-leg scores (0s if none).
+    const top = results[0]
+    const scoresByLeg: Record<Leg, number> = top
+      ? { ...top.scores }
+      : { bm25: 0, dense: 0, structural: 0 }
+    ledger.push({
+      ts: Date.now(),
+      queryId,
+      consumer: mapConsumer(intent),
+      query: question,
+      resultCount: results.length,
+      scoresByLeg,
+      band: projection.decision.band,
+      latencyMs: Date.now() - queryStart,
+    })
     return projection
   }
 
@@ -151,6 +229,18 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine =>
           type: 'answer.usage',
           payload: { tokens: chunk.inputTokens + chunk.outputTokens, tier, estCost },
         })
+        // Hold the L5 telemetry for telemetry().lastQuery.answer — keyed by queryId so it
+        // only attaches to ITS query (a later answer-less query reads null, not this).
+        lastAnswer = {
+          queryId: projection.queryId,
+          telemetry: {
+            band: projection.decision.band,
+            tier,
+            model: projection.decision.model,
+            tokens: chunk.inputTokens + chunk.outputTokens,
+            estCost,
+          },
+        }
       }
       yield chunk
     }
@@ -160,5 +250,60 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine =>
     return bus.on(handler)
   }
 
-  return { ingest, query, answer, on }
+  // ─── Observable — the PULL read-surface every transport calls (telemetry.ts §5.2) ─────
+
+  // The holding (non-per-query) snapshot: ingest + index struct, plus the last query.
+  function telemetry(): EngineTelemetry {
+    const index: IndexTelemetry | null =
+      indexBuiltAt === null
+        ? null
+        : {
+            docs: ingestStats.chunks,
+            sizeBytes: null, // the live index is :memory: — no on-disk size
+            builtAt: indexBuiltAt,
+            staleMs: Date.now() - indexBuiltAt,
+          }
+    const lastEntry = ledger[ledger.length - 1]
+    const lastQuery =
+      lastEntry === undefined
+        ? null
+        : {
+            retrieve: lastEntry,
+            // attach the L5 telemetry ONLY when it belongs to this same query.
+            answer:
+              lastAnswer !== null && lastAnswer.queryId === lastEntry.queryId
+                ? lastAnswer.telemetry
+                : null,
+          }
+    return { ingest: ingestTelemetry, index, lastQuery }
+  }
+
+  // The aggregate health surface. Status is driven by `indexed`; the provider check reports
+  // whether a key is available to construct the client — we never PING the LLM (cost/latency).
+  function health(): HealthReport {
+    const indexed = indexBuiltAt !== null
+    const providerOk = config.apiKey !== undefined || process.env.ANTHROPIC_API_KEY !== undefined
+    return {
+      status: indexed ? 'ok' : 'degraded',
+      checks: { indexed: { ok: indexed }, provider: { ok: providerOk } },
+      ts: Date.now(),
+    }
+  }
+
+  // The buffered events for a queryId (the late-subscriber replay); [] if never-seen/evicted.
+  function replay(queryId: string): Event[] {
+    const buf = replayBuffer.get(queryId)
+    return buf === undefined ? [] : [...buf] // defensive copy
+  }
+
+  // The cross-consumer ledger, newest-first; filtered by consumer, limited by limit.
+  function queryLog(opts?: { consumer?: Consumer; limit?: number }): QueryLogEntry[] {
+    let entries = [...ledger].reverse()
+    const consumer = opts?.consumer
+    if (consumer !== undefined) entries = entries.filter((e) => e.consumer === consumer)
+    if (opts?.limit !== undefined) entries = entries.slice(0, opts.limit)
+    return entries
+  }
+
+  return { ingest, query, answer, on, telemetry, health, replay, queryLog }
 }

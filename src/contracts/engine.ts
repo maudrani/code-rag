@@ -1,6 +1,7 @@
 import type { Event } from './events.js'
 import type { ConsumerIntent, Projection, Turn } from './projection.js'
 import type { AnswerChunk } from './provider.js'
+import type { Observable } from './telemetry.js'
 
 export interface IngestReport {
   filesIndexed: number
@@ -35,5 +36,10 @@ export interface Engine {
   on(handler: (event: Event) => void): Unsubscribe
 }
 
-/** the membrane factory — master-owned impl in `src/membrane/`. */
-export type CreateEngine = (config: EngineConfig) => Engine
+/**
+ * the membrane factory — master-owned impl in `src/membrane/`. Returns `Engine &
+ * Observable`: the core query/answer surface PLUS the telemetry read-surface (§5.2).
+ * Kept as an intersection so a plain `Engine` mock still type-checks for query/answer
+ * consumers; only the telemetry transports depend on `Observable`.
+ */
+export type CreateEngine = (config: EngineConfig) => Engine & Observable

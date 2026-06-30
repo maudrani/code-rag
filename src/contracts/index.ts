@@ -21,6 +21,21 @@ export type {
 export type { AnswerChunk, Provider } from './provider.js'
 export type { RankedChunk, RetrievalResult } from './retrieval.js'
 export type {
+  AnswerTelemetry,
+  ChunkTelemetry,
+  Consumer,
+  EngineTelemetry,
+  HealthReport,
+  IndexTelemetry,
+  IngestTelemetry,
+  Leg,
+  MembraneTelemetry,
+  Observable,
+  QueryLogEntry,
+  RagError,
+  RagErrorCode,
+} from './telemetry.js'
+export type {
   QueryRequest,
   QuerySseEvent,
   SearchRequest,
