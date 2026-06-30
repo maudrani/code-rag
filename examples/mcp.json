@@ -3,7 +3,7 @@
   "mcpServers": {
     "code-rag": {
       "command": "node",
-      "args": ["dist/mcp/server.js"],
+      "args": ["dist/src/mcp/serve.js"],
       "env": {
         "CORPUS_PATH": ".",
         "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"

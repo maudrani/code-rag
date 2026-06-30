@@ -1,0 +1,49 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { describe, expect, it } from 'vitest'
+import type { Engine } from '../../../src/contracts/engine.js'
+import { buildMcpServer } from '../../../src/mcp/server.js'
+import { makeMockEngine } from '../fixtures/mock-engine.js'
+
+async function connect(engine: Engine = makeMockEngine()) {
+  const server = buildMcpServer(engine)
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+  const client = new Client({ name: 'test-client', version: '0.0.0' })
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
+  return { client, server }
+}
+
+describe('buildMcpServer — real client round-trip (TKT-413)', () => {
+  it('registers exactly the `ask` + `search` tools', async () => {
+    const { client, server } = await connect()
+    const { tools } = await client.listTools()
+    expect(tools.map((t) => t.name).sort()).toEqual(['ask', 'search'])
+    await server.close()
+  })
+
+  it('callTool search -> structuredContent = the projection DTO (no context.assembled)', async () => {
+    const { client, server } = await connect()
+    const res = await client.callTool({ name: 'search', arguments: { query: 'where is foo?' } })
+    const sc = res.structuredContent as Record<string, unknown>
+    expect(sc.queryId).toBeDefined()
+    expect(sc.decision).toBeDefined()
+    expect('context' in sc).toBe(false)
+    await server.close()
+  })
+
+  it('callTool ask (dry) -> structuredContent + a text content block', async () => {
+    const { client, server } = await connect()
+    const res = await client.callTool({ name: 'ask', arguments: { query: 'q', dry: true } })
+    expect(res.structuredContent).toBeDefined()
+    const content = res.content as Array<{ type: string }>
+    expect(content.some((c) => c.type === 'text')).toBe(true)
+    await server.close()
+  })
+
+  it('NEGATIVE: calling an unknown tool returns an isError result (not a crash)', async () => {
+    const { client, server } = await connect()
+    const res = await client.callTool({ name: 'does-not-exist', arguments: {} })
+    expect(res.isError).toBe(true)
+    await server.close()
+  })
+})

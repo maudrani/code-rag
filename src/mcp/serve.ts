@@ -1,0 +1,37 @@
+import { pathToFileURL } from 'node:url'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { buildEngine } from '../consume/index.js'
+import { buildMcpServer } from './server.js'
+
+/**
+ * startMcpServer — the clone-and-run MCP entrypoint (ADR-006 product-MCP). Builds
+ * the engine from env (CORPUS_PATH / ANTHROPIC_API_KEY), exposes ask + search over
+ * stdio, and shuts down gracefully on SIGTERM/SIGINT.
+ *
+ * HYGIENE: stdout is the JSON-RPC channel — every log goes to stderr. `search` and
+ * `ask --dry` need no API key (the membrane provider is lazy).
+ */
+export async function startMcpServer(): Promise<void> {
+  const engine = buildEngine() // CORPUS_PATH / ANTHROPIC_API_KEY from env
+  const server = buildMcpServer(engine)
+  const transport = new StdioServerTransport()
+
+  const shutdown = (): void => {
+    void server.close().finally(() => process.exit(0))
+  }
+  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', shutdown)
+
+  await server.connect(transport)
+  process.stderr.write('code-rag MCP server running on stdio\n')
+}
+
+// Import-safe: open stdio only when executed directly (`node dist/src/mcp/serve.js`),
+// never on import (keeps tests + tooling side-effect free).
+const invokedPath = process.argv[1]
+if (invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).href) {
+  startMcpServer().catch((err: unknown) => {
+    process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`)
+    process.exit(1)
+  })
+}
