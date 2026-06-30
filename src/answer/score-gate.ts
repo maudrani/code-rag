@@ -7,7 +7,7 @@ import type { GateDecision, RankedChunk, ScoreGate } from '../contracts/index.js
  * populate `Projection.decision`. NO LLM, no I/O, no Date/random — given the same
  * inputs it always returns the same decision.
  *
- *   signal 1  grounding-score (top fused) -> band   (the refuse floor)
+ *   signal 1  grounding (lexical overlap) -> band   (the refuse floor)
  *   signal 2  complexity-proxy             -> tier   (cheap | strong) -> model
  *
  * The two signals are ORTHOGONAL (ADR-005): grounding decides *whether* to answer,
@@ -115,11 +115,14 @@ function significantTerms(query: string): string[] {
 function lexicalGrounding(retrieval: RankedChunk[], resolvedQuery: string): number {
   const terms = significantTerms(resolvedQuery)
   if (terms.length === 0) return 0
-  const haystack = retrieval
-    .slice(0, K_GROUND)
-    .map((r) => `${r.chunk.symbol} ${r.chunk.code}`.toLowerCase())
-    .join('\n')
-  const hits = terms.filter((t) => haystack.includes(t)).length
+  // Token-SET membership, not substring: "cat" must NOT ground "concatenate" (a substring
+  // over-match an audit found). The haystack is tokenized the same way as the query terms.
+  const haystackTokens = new Set(
+    retrieval
+      .slice(0, K_GROUND)
+      .flatMap((r) => `${r.chunk.symbol} ${r.chunk.code}`.toLowerCase().match(/[a-z0-9]+/g) ?? []),
+  )
+  const hits = terms.filter((t) => haystackTokens.has(t)).length
   return hits / terms.length
 }
 

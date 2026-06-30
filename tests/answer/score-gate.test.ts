@@ -54,6 +54,12 @@ describe('scoreGate — signal 1: grounding -> band (lexical overlap)', () => {
     expect(d.groundingScore).toBe(0)
   })
 
+  it('grounds on TOKEN membership, not substring: "cat" must NOT match "concatenate"', () => {
+    const d = scoreGate([rc('a.ts', 'concatenate')], q('cat'))
+    expect(d.band).toBe('refuse')
+    expect(d.groundingScore).toBe(0)
+  })
+
   it('groundingScore is the FRACTION of significant query terms present (not a rank score)', () => {
     // terms: foo, missingterm (2); code "foo function foo() {}" contains foo only -> 1/2
     const d = scoreGate([rc('a.ts', 'foo')], q('foo missingterm'))
