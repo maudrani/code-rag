@@ -113,8 +113,11 @@ clone-and-run reliability, not for pure NL↔code recall. Full table + reproduct
 
 Before any model runs, a pure score-gate reads two signals:
 
-- **Grounding** (the top fused retrieval score) → a `refuse` / `answer` band. If the
-  code doesn't support an answer, the assistant **refuses** rather than invent one.
+- **Grounding** (lexical overlap — do the query's terms actually appear in the retrieved
+  code?) → a `refuse` / `answer` band. If the code doesn't support an answer, the assistant
+  **refuses** rather than invent one. (A real-corpus dogfood proved the RRF fused score is
+  a poor grounding signal — rank-based, no calibrated magnitude — so the gate scores lexical
+  overlap instead.)
 - **Complexity** (distinct files + query intent) → a model **tier** (`cheap` haiku vs
   `strong` sonnet) — cost routing.
 
@@ -203,6 +206,12 @@ history stays a clean, attributed, per-layer narrative.
   under-counts the structural leg's real value on "where is X used / how does this
   subsystem work" queries.
 - **M2 MCP + M3 CLI** are designed against the projection but not built.
+- **Grounding is lexical** — the next precision lever is a raw-cosine or cross-encoder
+  **reranker** signal applied after fusion on the top-K (the dogfood showed RRF ranks
+  can't ground).
+- **Productionise the embedder out-of-process** — `onnxruntime-node` can abort the host
+  process, so the local embedder belongs in a child process, not in-band.
+- **FTS5 morphology** — Porter stemming so `upsert` / `upserted` match lexically.
 
 ## License
 
