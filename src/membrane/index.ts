@@ -275,7 +275,8 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
                 ? lastAnswer.telemetry
                 : null,
           }
-    return { ingest: ingestTelemetry, index, lastQuery }
+    // chunk: null until ingest-chunk ships collectChunkTelemetry (the L2 semantics are theirs, RULE-019).
+    return { ingest: ingestTelemetry, chunk: null, index, lastQuery }
   }
 
   // The aggregate health surface. Status is driven by `indexed`; the provider check reports

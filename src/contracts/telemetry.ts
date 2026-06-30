@@ -81,6 +81,10 @@ export interface MembraneTelemetry {
 /** The holding (non-per-query) snapshot `Observable.telemetry()` returns. */
 export interface EngineTelemetry {
   ingest: IngestTelemetry | null
+  /** L2 chunk telemetry — its read-surface slot (else ChunkTelemetry is the
+   *  "telemetry no one can read" anti-pattern). Wired when ingest-chunk ships
+   *  collectChunkTelemetry (RULE-019); null until then. */
+  chunk: ChunkTelemetry | null
   index: IndexTelemetry | null
   /** the most recent query's per-query telemetry (null before the first query). */
   lastQuery: { retrieve: QueryLogEntry; answer: AnswerTelemetry | null } | null
