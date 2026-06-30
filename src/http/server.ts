@@ -3,15 +3,30 @@ import { serve } from '@hono/node-server'
 import { createEngine } from '../package/index.js'
 import { buildApp, resolvePort } from './app.js'
 
+/** Anything with a Node-style `close(callback)` — the @hono/node-server instance. */
+export interface Closable {
+  close(callback?: (err?: Error) => void): void
+}
+
+/**
+ * makeShutdownHandler — a SIGTERM/SIGINT handler that closes the server once
+ * (idempotent), then exits. Exported + DI'd (server, exit) so the graceful-shutdown
+ * behavior is deterministically testable without real process signals.
+ */
+export function makeShutdownHandler(server: Closable, exit: (code: number) => void): () => void {
+  let closing = false
+  return () => {
+    if (closing) return
+    closing = true
+    server.close(() => exit(0))
+  }
+}
+
 /**
  * The clone-and-run HTTP entrypoint (ADR-006 / ADR-008). Wires the real Engine
  * from the package Consumer API, composes the app, serves it on Node via
- * @hono/node-server, and injects the WebSocket upgrade for /ws/trace.
- *
- * The Engine comes from `createEngine` (the master-owned membrane, ADR-002). The
- * server STRUCTURE is complete + tested (buildApp via a mock); until the master
- * fills the membrane, starting this entrypoint surfaces "not implemented yet" —
- * that is the documented integration boundary, not a surface gap.
+ * @hono/node-server, injects the WebSocket upgrade for /ws/trace, and shuts down
+ * gracefully on SIGTERM/SIGINT.
  */
 export function startServer(port: number = resolvePort(process.env.PORT)) {
   const engine = createEngine({
@@ -21,6 +36,11 @@ export function startServer(port: number = resolvePort(process.env.PORT)) {
   const { app, injectWebSocket } = buildApp(engine)
   const server = serve({ fetch: app.fetch, port })
   injectWebSocket(server)
+
+  const onShutdown = makeShutdownHandler(server, (code) => process.exit(code))
+  process.on('SIGTERM', onShutdown)
+  process.on('SIGINT', onShutdown)
+
   console.log(`surface HTTP server listening on :${port}`)
   return server
 }

@@ -3,6 +3,19 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { buildEngine } from '../consume/index.js'
 import { buildMcpServer } from './server.js'
 
+/** An idempotent stdio shutdown handler (close the server, then exit). Exported for testing. */
+export function makeMcpShutdown(
+  server: { close(): Promise<void> },
+  exit: (code: number) => void,
+): () => void {
+  let closing = false
+  return () => {
+    if (closing) return
+    closing = true
+    void server.close().finally(() => exit(0))
+  }
+}
+
 /**
  * startMcpServer — the clone-and-run MCP entrypoint (ADR-006 product-MCP). Builds
  * the engine from env (CORPUS_PATH / ANTHROPIC_API_KEY), exposes ask + search over
@@ -16,9 +29,7 @@ export async function startMcpServer(): Promise<void> {
   const server = buildMcpServer(engine)
   const transport = new StdioServerTransport()
 
-  const shutdown = (): void => {
-    void server.close().finally(() => process.exit(0))
-  }
+  const shutdown = makeMcpShutdown(server, (code) => process.exit(code))
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)
 

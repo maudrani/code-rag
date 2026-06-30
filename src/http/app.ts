@@ -1,5 +1,6 @@
 import { createNodeWebSocket } from '@hono/node-ws'
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
 import type { Engine } from '../contracts/engine.js'
 import { queryRoutes } from './routes/query.js'
@@ -25,6 +26,10 @@ export interface BuiltApp {
  */
 export function buildApp(engine: Engine): BuiltApp {
   const app = new Hono()
+  // The standalone web UI runs on a different origin (the Vite dev server), so the
+  // browser needs CORS to call this API (preflight + Access-Control-Allow-Origin).
+  // Permissive for clone-and-run; a real deploy should pin the allowed origin.
+  app.use('*', cors())
   const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app })
 
   app.get('/health', (c) => c.json({ status: 'ok' }))

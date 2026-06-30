@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { makeMcpShutdown } from '../../../src/mcp/serve.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = join(here, '..', '..', '..')
@@ -34,5 +35,27 @@ describe('MCP serve + config — TKT-414', () => {
   it('NEGATIVE: importing serve.ts is side-effect free (no auto-connect on import)', async () => {
     const mod = await import('../../../src/mcp/serve.js')
     expect(typeof mod.startMcpServer).toBe('function')
+  })
+
+  it('graceful shutdown: closes the server then exits 0, idempotent (audit follow-up)', async () => {
+    let closeCount = 0
+    let exitCode: number | undefined
+    const shutdown = makeMcpShutdown(
+      {
+        close: async () => {
+          closeCount++
+        },
+      },
+      (code) => {
+        exitCode = code
+      },
+    )
+
+    shutdown()
+    shutdown() // idempotent — close only once
+    await new Promise((r) => setTimeout(r, 0)) // let close().finally run
+
+    expect(closeCount).toBe(1)
+    expect(exitCode).toBe(0)
   })
 })
