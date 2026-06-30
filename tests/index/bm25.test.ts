@@ -7,7 +7,13 @@
  * body-only match, determinism, limit, fusion-readiness, and the injection/empty edge + negatives.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Bm25Index, splitIdentifiers, toFtsQuery } from '../../src/index/bm25.js'
+import {
+  Bm25Index,
+  ftsCreateTableSql,
+  ftsSymbolText,
+  splitIdentifiers,
+  toFtsQuery,
+} from '../../src/index/bm25.js'
 import { rrfFuse } from '../../src/retrieve/fuse.js'
 import {
   allChunks,
@@ -53,6 +59,47 @@ describe('toFtsQuery', () => {
     expect(q).toContain('"drop"')
     expect(q).toContain('"table"')
     for (const token of q.split(' OR ')) expect(token).toMatch(/^"[a-z0-9]+"$/)
+  })
+})
+
+// B4 (adopt peripheral FTR-032 escapeFtsQuery): tokenize on Unicode letters/digits, not ASCII —
+// so CJK/accented identifiers survive instead of being silently dropped by `[A-Za-z0-9_]`.
+describe('toFtsQuery — Unicode identifiers survive tokenization (FTR-032)', () => {
+  it('keeps an accented identifier (not dropped / truncated to ASCII)', () => {
+    expect(toFtsQuery('café')).toContain('"café"')
+  })
+
+  it('keeps a CJK term', () => {
+    expect(toFtsQuery('日本語')).toContain('"日本語"')
+  })
+
+  it('splits an accented snake_case identifier and keeps every part', () => {
+    const q = toFtsQuery('über_token')
+    expect(q).toContain('"über_token"') // `_` kept in the token class → snake_case stays whole first
+    expect(q).toContain('"über"')
+    expect(q).toContain('"token"')
+  })
+
+  it('still strips FTS5 operators around a non-ASCII term (injection-safe)', () => {
+    const q = toFtsQuery('"café"; DROP')
+    expect(q).toContain('"café"')
+    expect(q).toContain('"drop"')
+    expect(q).not.toContain('DROP TABLE')
+  })
+})
+
+// schema-drift remediation: the FTS5 DDL + the index-time symbol augmentation are derived from ONE
+// set of helpers that both Bm25Index and SqliteStore consume (so hardening one can't diverge).
+describe('shared FTS5 schema helpers (single-source — schema-drift guard)', () => {
+  it('ftsCreateTableSql emits the fixed columns + unicode61 tokenizer; IF NOT EXISTS is opt-in', () => {
+    expect(ftsCreateTableSql()).toContain('chunk_id UNINDEXED, symbol, body')
+    expect(ftsCreateTableSql()).toContain("tokenize = 'unicode61'")
+    expect(ftsCreateTableSql()).not.toContain('IF NOT EXISTS')
+    expect(ftsCreateTableSql(true)).toContain('IF NOT EXISTS')
+  })
+
+  it('ftsSymbolText augments a symbol with its split sub-tokens (index-time partial-word match)', () => {
+    expect(ftsSymbolText('getUserById')).toBe('getUserById get user by id')
   })
 })
 

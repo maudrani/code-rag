@@ -22,6 +22,16 @@ export interface Embedder {
   readonly dimension: number
   /** embed a batch; returns one L2-normalised Float32Array per input (empty in ⇒ empty out). */
   embed(texts: readonly string[]): Promise<Float32Array[]>
+  /**
+   * Tear down the cached ONNX pipeline so its native onnxruntime threadpool is released and the
+   * host can exit cleanly — without this the cached pipeline is never disposed (adopt peripheral
+   * FTR-038 / TKT-346 + transformers.js#1403, the macOS process-exit mutex-abort class). Best-effort
+   * + feature-detected (transformers.js v3 pipelines expose `dispose()`; older shapes `close()`),
+   * never throws on shutdown, and nulls the cache so the next {@link embed} lazily rebuilds a fresh
+   * pipeline. Idempotent. OPTIONAL on the seam — lightweight in-memory test doubles need not
+   * implement teardown; {@link createOnnxEmbedder} always provides a real one.
+   */
+  dispose?(): Promise<void>
 }
 
 /** transformers.js dtype (load-time precision). `q8` = int8 — the ADR-003 default (≤2% NDCG@10). */
@@ -81,8 +91,19 @@ const defaultLoadPipeline: PipelineLoader = async (model, dtype) => {
     opts: { dtype: EmbedDtype },
   ) => Promise<FeatureExtractionFn>
   const extractor = await pipeline('feature-extraction', model, { dtype })
-  return (texts, opts) => extractor(texts, opts)
+  // Forward the pipeline's native teardown handle (transformers.js v3 exposes dispose(); older
+  // shapes close()) onto the returned fn so createOnnxEmbedder.dispose() can release the onnxruntime
+  // threadpool (TKT-346 / transformers.js#1403). The call path is unchanged — only teardown is added.
+  const native = extractor as unknown as TeardownHandle
+  const call: FeatureExtractionFn = (texts, opts) => extractor(texts, opts)
+  const fn = call as FeatureExtractionFn & TeardownHandle
+  if (typeof native.dispose === 'function') fn.dispose = () => native.dispose?.()
+  if (typeof native.close === 'function') fn.close = () => native.close?.()
+  return fn
 }
+
+/** The optional native teardown surface a transformers.js pipeline may expose (feature-detected). */
+type TeardownHandle = { dispose?: () => unknown; close?: () => unknown }
 
 /**
  * Build an {@link Embedder} over a local ONNX model. The pipeline is loaded lazily and cached
@@ -118,6 +139,18 @@ export function createOnnxEmbedder(config: OnnxEmbedderConfig = {}): Embedder {
       const vectors: Float32Array[] = []
       for (let i = 0; i < rows; i++) vectors.push(flat.slice(i * dim, (i + 1) * dim))
       return vectors
+    },
+    async dispose() {
+      if (pipe === undefined) return // nothing loaded — idempotent no-op
+      const loading = pipe
+      pipe = undefined // null the cache FIRST so the next embed() rebuilds a fresh pipeline
+      try {
+        const fn = (await loading) as unknown as TeardownHandle
+        if (typeof fn.dispose === 'function') await fn.dispose()
+        else if (typeof fn.close === 'function') await fn.close()
+      } catch {
+        // best-effort native teardown — a disposal hiccup must not derail a clean shutdown
+      }
     },
   }
 }

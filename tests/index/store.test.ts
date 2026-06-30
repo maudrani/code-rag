@@ -9,7 +9,7 @@
  * embedder-optional path, big vectors, and handle hygiene. A deterministic fake embedder keeps it
  * offline; every store is closed in afterEach (no handle leak).
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -60,6 +60,41 @@ describe('SqliteStore — construction', () => {
 
   it('throws an explicit error when the DB file cannot be opened', () => {
     expect(() => new SqliteStore({ path: '/no/such/dir/xyz/index.db' })).toThrow()
+  })
+})
+
+// B1 (adopt peripheral FTR-051): WAL with locking_mode=EXCLUSIVE set BEFORE the WAL pragma keeps the
+// wal-index in HEAP, so the `-shm` shared-memory file is never created/mmapped — structurally
+// eliminating the `-shm`-pagein SIGBUS class during an FTS5 merge. The pragma ORDER is load-bearing:
+// the structural no-`-shm` proof goes RED if EXCLUSIVE is set after WAL (the `-shm` already exists).
+describe('SqliteStore — WAL exclusive locking (FTR-051, no -shm SIGBUS class)', () => {
+  const fileStore = (lockingMode?: 'normal' | 'exclusive') => {
+    const dir = mkdtempSync(join(tmpdir(), 'l3-lock-'))
+    tmpDirs.push(dir)
+    const path = join(dir, 'index.db')
+    const store = track(
+      new SqliteStore(lockingMode === undefined ? { path } : { path, lockingMode }),
+    )
+    return { store, path }
+  }
+
+  it('defaults to EXCLUSIVE and never creates the -shm file (still WAL)', async () => {
+    const { store, path } = fileStore()
+    expect(store.lockingMode().toLowerCase()).toBe('exclusive')
+    await store.index(allChunks, { embedder: fakeEmbedder }) // real WAL writes (the FTS5 merge path)
+    expect(store.journalMode().toLowerCase()).toBe('wal') // WAL intact — only the wal-index moved to heap
+    expect(existsSync(`${path}-shm`)).toBe(false) // structural proof: no shared-memory file
+  })
+
+  it('non-vacuity: NORMAL locking DOES create a -shm under the same load', async () => {
+    const { store, path } = fileStore('normal')
+    expect(store.lockingMode().toLowerCase()).toBe('normal')
+    await store.index(allChunks, { embedder: fakeEmbedder })
+    expect(existsSync(`${path}-shm`)).toBe(true) // proves the EXCLUSIVE assertion above isn't vacuous
+  })
+
+  it('rejects an invalid lockingMode', () => {
+    expect(() => new SqliteStore({ lockingMode: 'bogus' as 'exclusive' })).toThrow(/lockingMode/i)
   })
 })
 

@@ -20,7 +20,13 @@ import { createDenseLeg, type VectorEntry } from '../retrieve/dense.js'
 import type { LegCandidate } from '../retrieve/fuse.js'
 import type { LexicalLeg, RetrieveDeps } from '../retrieve/retrieve.js'
 import { buildStructuralIndex, type StructuralIndex } from '../retrieve/structural.js'
-import { splitIdentifiers, toFtsQuery } from './bm25.js'
+import {
+  FTS_INSERT_SQL,
+  ftsCreateTableSql,
+  ftsSearchSql,
+  ftsSymbolText,
+  toFtsQuery,
+} from './bm25.js'
 import { decodeVector, type Embedder, encodeVector } from './embed.js'
 
 export interface SqliteStoreOptions {
@@ -28,6 +34,15 @@ export interface SqliteStoreOptions {
   path?: string
   /** enable WAL on the file path for concurrent reads during a rebuild (default true; n/a for :memory:). */
   walMode?: boolean
+  /**
+   * SQLite locking mode for the file path (n/a for :memory:). `'exclusive'` (DEFAULT for this
+   * single-process store) emits `PRAGMA locking_mode = EXCLUSIVE` BEFORE the WAL pragma, so the
+   * wal-index lives in HEAP and the `-shm` shared-memory file is never created or mmapped — this
+   * structurally eliminates the `-shm`-pagein SIGBUS class during an FTS5 merge (adopt peripheral
+   * FTR-051; pragma ORDER is load-bearing). `'normal'` is standard WAL with the mmap'd `-shm`.
+   * CONSTRAINT: EXCLUSIVE locks the DB to this ONE connection — never open the same file twice.
+   */
+  lockingMode?: 'normal' | 'exclusive'
   /** FTS5 bm25 weight for the `symbol` column (default 2 — mirrors bm25.ts code-tuning). */
   symbolWeight?: number
   /** FTS5 bm25 weight for the `body` column (default 1). */
@@ -59,13 +74,20 @@ export class SqliteStore {
 
   constructor(options: SqliteStoreOptions = {}) {
     const path = options.path ?? ':memory:'
+    const lockingMode = options.lockingMode ?? 'exclusive'
+    if (lockingMode !== 'normal' && lockingMode !== 'exclusive') {
+      throw new Error(`Invalid lockingMode: '${lockingMode}'. Allowed: normal, exclusive`)
+    }
     this.symbolWeight = options.symbolWeight ?? 2
     this.codeWeight = options.codeWeight ?? 1
     this.db = new Database(path) // throws an explicit SqliteError if the file cannot be opened
     if (path !== ':memory:' && options.walMode !== false) {
-      // WAL lets searches read while a rebuild writes. (For a long-lived multi-process daemon,
-      // peripheral's sqlite adapter also sets locking_mode=EXCLUSIVE to avoid the -shm pagein
-      // SIGBUS during FTS5 merge — out of scope for this single-process M1 store.)
+      // WAL lets searches read while a rebuild writes. The pragma ORDER is load-bearing (adopt
+      // peripheral FTR-051): locking_mode=EXCLUSIVE MUST precede the first WAL access — set then,
+      // SQLite keeps the wal-index in HEAP and never creates/mmaps the `-shm` file, structurally
+      // eliminating the `-shm`-pagein SIGBUS during an FTS5 merge. Set AFTER WAL it silently fails
+      // (the `-shm` already exists). Default 'exclusive' is safe: this store is single-connection.
+      if (lockingMode === 'exclusive') this.db.pragma('locking_mode = EXCLUSIVE')
       this.db.pragma('journal_mode = WAL')
     }
     this.db.exec(`
@@ -81,8 +103,7 @@ export class SqliteStore {
         structural_refs TEXT NOT NULL,
         embedding BLOB
       ) STRICT;
-      CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
-        USING fts5(chunk_id UNINDEXED, symbol, body, tokenize = 'unicode61');
+      ${ftsCreateTableSql(true)};
       CREATE TABLE IF NOT EXISTS structural_edges (
         src TEXT NOT NULL,
         dst TEXT NOT NULL,
@@ -94,6 +115,11 @@ export class SqliteStore {
   /** The active journal mode (e.g. 'wal' on disk, 'memory' for :memory:). */
   journalMode(): string {
     return this.db.pragma('journal_mode', { simple: true }) as string
+  }
+
+  /** The active locking mode ('exclusive' ⇒ heap wal-index, no `-shm`; 'normal' ⇒ mmap'd `-shm`). */
+  lockingMode(): string {
+    return this.db.pragma('locking_mode', { simple: true }) as string
   }
 
   /**
@@ -112,9 +138,7 @@ export class SqliteStore {
       `INSERT INTO chunks (id, path, lang, symbol, kind, start_line, end_line, code, structural_refs, embedding)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    const insertFts = this.db.prepare(
-      'INSERT INTO chunks_fts (chunk_id, symbol, body) VALUES (?, ?, ?)',
-    )
+    const insertFts = this.db.prepare(FTS_INSERT_SQL)
     const insertEdge = this.db.prepare('INSERT INTO structural_edges (src, dst) VALUES (?, ?)')
 
     const rebuild = this.db.transaction(() => {
@@ -133,7 +157,7 @@ export class SqliteStore {
           blobs[i] ?? null,
         )
         // augment the symbol column with split sub-tokens so partial-word queries match (bm25.ts)
-        insertFts.run(chunk.id, `${chunk.symbol} ${splitIdentifiers(chunk.symbol)}`, chunk.code)
+        insertFts.run(chunk.id, ftsSymbolText(chunk.symbol), chunk.code)
       })
       for (const [src, neighbours] of structural.neighbours) {
         for (const dst of neighbours) insertEdge.run(src, dst)
@@ -147,11 +171,7 @@ export class SqliteStore {
     const match = toFtsQuery(query)
     if (match === '') return []
     const rows = this.db
-      .prepare(
-        `SELECT chunk_id AS chunkId, -bm25(chunks_fts, :sw, :cw) AS score
-         FROM chunks_fts WHERE chunks_fts MATCH :q
-         ORDER BY bm25(chunks_fts, :sw, :cw) LIMIT :lim`,
-      )
+      .prepare(ftsSearchSql())
       .all({ sw: this.symbolWeight, cw: this.codeWeight, q: match, lim: limit }) as LegCandidate[]
     return rows.map((row) => ({ chunkId: row.chunkId, score: row.score }))
   }

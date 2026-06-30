@@ -139,6 +139,70 @@ describe('createOnnxEmbedder (injected pipeline — model-free)', () => {
   })
 })
 
+// B2 (adopt peripheral FTR-038): the embedder owns a dispose() seam that tears the cached pipeline
+// down (transformers.js v3 dispose() / older close()), swallows teardown errors, and nulls the cache
+// so a fresh pipeline rebuilds on the next embed(). All model-free via the injected fake pipeline.
+describe('createOnnxEmbedder — dispose() (pipeline teardown, FTR-038)', () => {
+  /** A loader whose returned extractor carries a dispose() spy (mimics a transformers.js v3 pipeline). */
+  function disposableLoader(onDispose?: () => void) {
+    const dispose = vi.fn(onDispose)
+    const load = vi.fn(async (): Promise<FeatureExtractionFn> => {
+      const fn = (async (): Promise<EmbedTensor> => ({
+        data: new Float32Array(3),
+        dims: [1, 3],
+      })) as FeatureExtractionFn & { dispose?: () => unknown }
+      fn.dispose = dispose
+      return fn
+    })
+    return { load, dispose }
+  }
+
+  it('disposes the cached pipeline, then rebuilds a fresh one on the next embed()', async () => {
+    const { load, dispose } = disposableLoader()
+    const embedder = createOnnxEmbedder({ dimension: 3, loadPipeline: load })
+    await embedder.embed(['foo'])
+    expect(load).toHaveBeenCalledTimes(1)
+    await embedder.dispose?.()
+    expect(dispose).toHaveBeenCalledTimes(1) // tore the pipeline down
+    await embedder.embed(['bar']) // cache nulled → a FRESH pipeline is built
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('is an idempotent no-op when nothing was ever loaded (no load forced just to dispose)', async () => {
+    const { load } = disposableLoader()
+    const embedder = createOnnxEmbedder({ dimension: 3, loadPipeline: load })
+    await expect(embedder.dispose?.()).resolves.toBeUndefined()
+    expect(load).not.toHaveBeenCalled()
+  })
+
+  it('never throws on shutdown even if the native dispose() fails (best-effort)', async () => {
+    const { load } = disposableLoader(() => {
+      throw new Error('native abort')
+    })
+    const embedder = createOnnxEmbedder({ dimension: 3, loadPipeline: load })
+    await embedder.embed(['foo'])
+    await expect(embedder.dispose?.()).resolves.toBeUndefined() // error swallowed
+    await embedder.embed(['bar']) // still rebuilds after a failed dispose
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('falls back to close() when the pipeline exposes no dispose()', async () => {
+    const close = vi.fn()
+    const load = vi.fn(async (): Promise<FeatureExtractionFn> => {
+      const fn = (async (): Promise<EmbedTensor> => ({
+        data: new Float32Array(3),
+        dims: [1, 3],
+      })) as FeatureExtractionFn & { close?: () => unknown }
+      fn.close = close
+      return fn
+    })
+    const embedder = createOnnxEmbedder({ dimension: 3, loadPipeline: load })
+    await embedder.embed(['foo'])
+    await embedder.dispose?.()
+    expect(close).toHaveBeenCalledTimes(1)
+  })
+})
+
 // Real ONNX round-trip — gated (one-time model download). Run: RUN_SLOW=1 vitest run tests/index/embed.test.ts
 describe.skipIf(!RUN_SLOW)('createOnnxEmbedder (real ONNX, RUN_SLOW)', () => {
   it('loads the default model and embeds code-aware semantics', async () => {
