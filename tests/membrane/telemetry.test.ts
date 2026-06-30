@@ -170,6 +170,10 @@ describe('telemetry() — the holding snapshot + honest invariants', () => {
       // the IngestTelemetry invariant — honest with skipped=0, errors=[]:
       expect(ing.filesWalked).toBe(ing.filesIndexed + ing.skipped + ing.errors.length)
       expect(ing.byLang.typescript).toBeGreaterThan(0)
+      // ingest IS the collectIngestTelemetry output: its FILE-level byLang obeys that collector's
+      // Σ byLang === filesIndexed invariant (on a multi-chunk-per-file corpus this also separates it
+      // from a chunk-level count). The genuine non-vacuous twin for ingest is the un-ingested null below.
+      expect(Object.values(ing.byLang).reduce((a, b) => a + b, 0)).toBe(ing.filesIndexed)
       expect(ing.durationMs).toBeGreaterThanOrEqual(0)
     }
 
@@ -182,16 +186,27 @@ describe('telemetry() — the holding snapshot + honest invariants', () => {
       expect(idx.staleMs).toBeGreaterThanOrEqual(0)
     }
 
+    // chunk IS the collectChunkTelemetry output — NON-NULL after ingest (replaces `chunk: null`).
+    const chk = t0.chunk
+    expect(chk).not.toBeNull()
+    if (chk) {
+      expect(chk.count).toBe(ing?.chunks) // L2 count agrees with the ingest chunk total
+      expect(chk.count).toBeGreaterThan(0)
+      expect(typeof chk.glueFallbacks).toBe('number') // a richer, chunk-derived field
+      expect(chk.byLang.typescript).toBeGreaterThan(0)
+    }
+
     const p = await engine.query('where is getUserById?', [], 'package')
     const t1 = engine.telemetry()
     expect(t1.lastQuery?.retrieve.queryId).toBe(p.queryId)
     expect(t1.lastQuery?.answer).toBeNull() // answer() was not called
   })
 
-  it('FAILURE TWIN: a fresh un-ingested engine reports null ingest/index/lastQuery', () => {
+  it('FAILURE TWIN: a fresh un-ingested engine reports null ingest/chunk/index/lastQuery', () => {
     const engine = createEngine({})
     const t = engine.telemetry()
     expect(t.ingest).toBeNull()
+    expect(t.chunk).toBeNull() // non-vacuous pair: chunk is null BEFORE ingest, non-null after
     expect(t.index).toBeNull()
     expect(t.lastQuery).toBeNull()
   })
@@ -231,6 +246,22 @@ describe('telemetry() — the holding snapshot + honest invariants', () => {
     // a NEWER query (no answer()) must reset lastQuery.answer to null (honest association)
     await engine.query('parseQuery', [], 'package')
     expect(engine.telemetry().lastQuery?.answer).toBeNull()
+  })
+
+  it('REFUSE path: a refused query records a ZERO-COST AnswerTelemetry (the "$0 spent" story)', async () => {
+    const engine = await freshEngine()
+    // alien tokens ground nothing -> band 'refuse', 0 results; answer() never runs (provider throws).
+    const refused = await engine.query('zzzqqq wxyz vvbbnn', [], 'package')
+    const lq = engine.telemetry().lastQuery
+    expect(lq?.retrieve.queryId).toBe(refused.queryId)
+    expect(lq?.retrieve.band).toBe('refuse')
+    // OBSERVABLE now: the refuse attaches a real, zero-cost L5 record instead of null. NON-VACUOUS
+    // vs the sibling test where a NON-refused query with no answer() leaves lastQuery.answer null:
+    // the only difference is the band, which proves the refuse path is what records this.
+    expect(lq?.answer).not.toBeNull()
+    expect(lq?.answer?.band).toBe('refuse')
+    expect(lq?.answer?.tokens).toBe(0)
+    expect(lq?.answer?.estCost).toBe(0) // a refuse can never have spent anything
   })
 })
 

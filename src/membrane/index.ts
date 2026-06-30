@@ -1,10 +1,16 @@
-import { estimateCost } from '../answer/cost.js'
 import { scoreGate } from '../answer/score-gate.js'
+import { buildAnswerTelemetry } from '../answer/telemetry.js'
 import { createBus } from '../bus/index.js'
-import { ingestAndChunk, initParser } from '../chunk/index.js'
+import {
+  collectChunkTelemetry,
+  collectIngestTelemetry,
+  ingestAndChunk,
+  initParser,
+} from '../chunk/index.js'
 import type {
   AnswerChunk,
   AnswerTelemetry,
+  ChunkTelemetry,
   Consumer,
   ConsumerIntent,
   CreateEngine,
@@ -16,7 +22,6 @@ import type {
   IndexTelemetry,
   IngestReport,
   IngestTelemetry,
-  Leg,
   Observable,
   Projection,
   Provider,
@@ -28,6 +33,7 @@ import { Bm25Index } from '../index/bm25.js'
 import { createClaudeProvider } from '../provider/claude.js'
 import { type RetrieveDeps, retrieve } from '../retrieve/retrieve.js'
 import { buildStructuralIndex } from '../retrieve/structural.js'
+import { topScoresByLeg } from '../retrieve/telemetry.js'
 import { project } from './project.js'
 import { needsRewrite } from './resolve.js'
 
@@ -72,6 +78,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
   // ─── observability state (master-owned seam; telemetry.ts) ────────────────────────────
   // The holding (non-per-query) telemetry, the per-query ledger, and the last L5 telemetry.
   let ingestTelemetry: IngestTelemetry | null = null
+  let chunkTelemetry: ChunkTelemetry | null = null
   let indexBuiltAt: number | null = null
   const ledger: QueryLogEntry[] = []
   let lastAnswer: { queryId: string; telemetry: AnswerTelemetry } | null = null
@@ -110,21 +117,19 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     }
     ingestStats = { filesIndexed: files.length, chunks: chunks.length }
 
-    // Hold the per-layer telemetry the Observable surface reads. skipped/errors stay 0/[]
-    // until the ingest specialist enriches them (RULE-019); meanwhile the IngestTelemetry
-    // invariant `filesWalked === filesIndexed + skipped + errors.length` is kept honest.
-    const byLang: Record<string, number> = {}
-    for (const c of chunks) byLang[c.lang] = (byLang[c.lang] ?? 0) + 1
+    // Hold the per-layer telemetry the Observable surface reads, via the specialists' pure
+    // collectors (FTR-12 seam, RULE-019): collectChunkTelemetry projects the emitted Chunk[] (L2),
+    // collectIngestTelemetry projects the ingest result (L1). `skipped: []` for now (the walker's
+    // skips are not yet threaded here); the IngestTelemetry invariant filesWalked === filesIndexed +
+    // skipped + errors.length stays honest by construction inside collectIngestTelemetry.
     const durationMs = Date.now() - started
-    ingestTelemetry = {
-      filesWalked: files.length,
-      filesIndexed: files.length,
-      skipped: 0,
-      chunks: chunks.length,
-      byLang,
-      errors: [],
+    chunkTelemetry = collectChunkTelemetry(chunks)
+    ingestTelemetry = collectIngestTelemetry({
+      files,
+      skipped: [],
+      chunkCount: chunks.length,
       durationMs,
-    }
+    })
     indexBuiltAt = Date.now()
     return { ...ingestStats, durationMs }
   }
@@ -194,11 +199,10 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     })
 
     // L4 ledger entry — the cross-consumer record (adopt peripheral QueryLogEntry; scoresByLeg
-    // + consumer are novel here). scoresByLeg mirrors the TOP result's per-leg scores (0s if none).
-    const top = results[0]
-    const scoresByLeg: Record<Leg, number> = top
-      ? { ...top.scores }
-      : { bm25: 0, dense: 0, structural: 0 }
+    // + consumer are novel here). scoresByLeg via the L4 specialist's topScoresByLeg SSOT — a
+    // byte-identical swap of the prior inline spread that makes the DD-1 leg-sum invariant
+    // unit-assertable (fresh copy of the TOP result's per-leg scores; all-zero if none).
+    const scoresByLeg = topScoresByLeg(results)
     ledger.push({
       ts: Date.now(),
       queryId,
@@ -209,6 +213,14 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
       band: projection.decision.band,
       latencyMs: Date.now() - queryStart,
     })
+
+    // A refused query never reaches the provider, so answer() early-returns and would leave
+    // lastQuery.answer null — making the cost-control story ("refused -> $0 spent") unobservable.
+    // Record the ZERO-COST AnswerTelemetry HERE (no usage -> tokens/estCost 0) so telemetry()
+    // surfaces the refuse instead of null. Keyed by queryId, identical to the answered path.
+    if (projection.decision.band === 'refuse') {
+      lastAnswer = { queryId, telemetry: buildAnswerTelemetry(projection.decision) }
+    }
     return projection
   }
 
@@ -218,29 +230,22 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     const { tier } = projection.decision
     for await (const chunk of getProvider().answer(projection.question, projection, history)) {
       if (chunk.type === 'usage') {
-        const estCost = estimateCost(
-          { inputTokens: chunk.inputTokens, outputTokens: chunk.outputTokens },
-          tier,
-        )
-        // L5 — the only probabilistic layer; the cost is the membrane's to compute + emit.
+        // L5 — the only probabilistic layer. The answer specialist's pure buildAnswerTelemetry
+        // is the SSOT for the band/tier/model/tokens/estCost struct (RULE-019); the bus event
+        // and the held telemetry both read it, so the cost is computed once and can never diverge.
+        const telemetry = buildAnswerTelemetry(projection.decision, {
+          inputTokens: chunk.inputTokens,
+          outputTokens: chunk.outputTokens,
+        })
         bus.emit({
           queryId: projection.queryId,
           layer: 'L5',
           type: 'answer.usage',
-          payload: { tokens: chunk.inputTokens + chunk.outputTokens, tier, estCost },
+          payload: { tokens: telemetry.tokens, tier, estCost: telemetry.estCost },
         })
         // Hold the L5 telemetry for telemetry().lastQuery.answer — keyed by queryId so it
         // only attaches to ITS query (a later answer-less query reads null, not this).
-        lastAnswer = {
-          queryId: projection.queryId,
-          telemetry: {
-            band: projection.decision.band,
-            tier,
-            model: projection.decision.model,
-            tokens: chunk.inputTokens + chunk.outputTokens,
-            estCost,
-          },
-        }
+        lastAnswer = { queryId: projection.queryId, telemetry }
       }
       yield chunk
     }
@@ -275,8 +280,8 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
                 ? lastAnswer.telemetry
                 : null,
           }
-    // chunk: null until ingest-chunk ships collectChunkTelemetry (the L2 semantics are theirs, RULE-019).
-    return { ingest: ingestTelemetry, chunk: null, index, lastQuery }
+    // ingest + chunk are the held collectIngestTelemetry / collectChunkTelemetry outputs (L1/L2).
+    return { ingest: ingestTelemetry, chunk: chunkTelemetry, index, lastQuery }
   }
 
   // The aggregate health surface. Status is driven by `indexed`; the provider check reports

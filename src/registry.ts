@@ -15,6 +15,10 @@
  * `registryHasGap()` is the single boolean a CI step exits non-zero on.
  */
 
+import { ANSWER_GATES } from './answer/telemetry.js'
+import { SURFACE_GATES } from './consume/gates.js'
+import { RETRIEVE_GATES } from './retrieve/telemetry.js'
+
 /** A single registered gate: a declared behavior + the standing test that backs it. */
 export interface Gate {
   /** stable id, e.g. 'membrane.replay'. */
@@ -119,11 +123,33 @@ export const MEMBRANE_GATES: Gate[] = [
   },
 ]
 
-/** The module-level default registry — the CI entry point (membrane gates pre-registered). */
-const defaultRegistry: GateRegistry = createGateRegistry(MEMBRANE_GATES)
+/**
+ * The module-level default registry — the CI entry point. Folds EVERY layer's gates into one
+ * singleton so `registryHasGap()` is a single global boolean across the whole observability seam:
+ * MEMBRANE_GATES + ANSWER_GATES (answer) + SURFACE_GATES (surface) + RETRIEVE_GATES (retrieve).
+ *
+ * NOTE — no ingest/chunk gates yet: the L1/L2 specialists have NOT exported an INGEST_GATES /
+ * CHUNK_GATES array, so those layers contribute none here. When ingest-chunk ships one, add it
+ * to the seed below so `registryHasGap()` keeps covering every layer.
+ *
+ * LAZY seeding (not eager) is deliberate: src/consume/gates.ts value-imports `registerGate` from
+ * this module, so eagerly spreading SURFACE_GATES in the module body would read it before
+ * consume/gates.ts finished initializing under that import cycle (a TDZ crash). Deferring the
+ * fold to first use sidesteps the cycle — by call time every layer module is fully evaluated.
+ */
+let defaultRegistry: GateRegistry | null = null
+function getDefaultRegistry(): GateRegistry {
+  defaultRegistry ??= createGateRegistry([
+    ...MEMBRANE_GATES,
+    ...ANSWER_GATES,
+    ...SURFACE_GATES,
+    ...RETRIEVE_GATES,
+  ])
+  return defaultRegistry
+}
 
 export const registerGate = (gate: Gate): void => {
-  defaultRegistry.registerGate(gate)
+  getDefaultRegistry().registerGate(gate)
 }
-export const auditRegistry = (): GateVerdict[] => defaultRegistry.auditRegistry()
-export const registryHasGap = (): boolean => defaultRegistry.registryHasGap()
+export const auditRegistry = (): GateVerdict[] => getDefaultRegistry().auditRegistry()
+export const registryHasGap = (): boolean => getDefaultRegistry().registryHasGap()
