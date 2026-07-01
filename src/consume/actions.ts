@@ -2,6 +2,7 @@ import type { Engine, EngineConfig } from '../contracts/engine.js'
 import type { Projection, Turn } from '../contracts/projection.js'
 import type { Consumer, Observable } from '../contracts/telemetry.js'
 import { createEngine } from '../package/index.js'
+import { JsonlLedgerSink, resolveLedgerPath, withLedger } from './ledger.js'
 
 /**
  * resolveEngineConfig — config precedence: explicit arg > env (CORPUS_PATH,
@@ -24,9 +25,18 @@ export function resolveEngineConfig(
  * buildEngine — the single place config becomes an Engine, so no two loaders drift.
  * Returns `Engine & Observable` (what createEngine returns): the query/answer verbs
  * PLUS the telemetry read-surface the stats/health/log transports need.
+ *
+ * When `CODE_RAG_LEDGER` is set, the engine is wrapped so every query ALSO appends its
+ * entry to the shared cross-consumer JSONL ledger (the dashboard funnel, §5.3). Env-gated:
+ * unset (tests, default) → in-memory only, no fs writes, today's behavior.
  */
-export function buildEngine(config: EngineConfig = {}): Engine & Observable {
-  return createEngine(resolveEngineConfig(config))
+export function buildEngine(
+  config: EngineConfig = {},
+  env: NodeJS.ProcessEnv = process.env,
+): Engine & Observable {
+  const engine = createEngine(resolveEngineConfig(config, env))
+  const ledgerPath = resolveLedgerPath(env)
+  return ledgerPath === undefined ? engine : withLedger(engine, new JsonlLedgerSink(ledgerPath))
 }
 
 export interface AskOptions {

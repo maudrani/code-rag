@@ -1,5 +1,13 @@
 import type { AskOptions } from '../consume/index.js'
-import { ask, buildEngine, getHealth, getLog, getLogPayload, getStats } from '../consume/index.js'
+import {
+  ask,
+  buildEngine,
+  getHealth,
+  getLog,
+  getStats,
+  readLedger,
+  resolveLedgerPath,
+} from '../consume/index.js'
 import type { Engine, EngineConfig } from '../contracts/engine.js'
 import type { Consumer, Observable } from '../contracts/telemetry.js'
 import { CliError, EXIT } from './errors.js'
@@ -84,13 +92,13 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
       const opts: { consumer?: Consumer; limit?: number } = {}
       if (cmd.consumer !== undefined) opts.consumer = cmd.consumer
       if (cmd.tail !== undefined) opts.limit = cmd.tail
-      const engine = makeEngine()
-      // --json emits the parity wire shape ({ entries }); the human view lists the entries.
-      deps.stdout.write(
-        cmd.json
-          ? `${telemetryJson(getLogPayload(engine, opts))}\n`
-          : humanLog(getLog(engine, opts), useColor),
-      )
+      // Cross-process: read the SHARED ledger when CODE_RAG_LEDGER is set (so a standalone
+      // `code-rag log` sees queries from other consumers — the isolated-ledger finding); else
+      // this process's in-memory ledger. Both render as { entries } (the parity wire shape).
+      const ledgerPath = resolveLedgerPath(deps.env)
+      const entries =
+        ledgerPath !== undefined ? readLedger(ledgerPath, opts) : getLog(makeEngine(), opts)
+      deps.stdout.write(cmd.json ? `${telemetryJson({ entries })}\n` : humanLog(entries, useColor))
       return EXIT.OK
     }
 

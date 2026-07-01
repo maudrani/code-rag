@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
 import type { Engine } from '../contracts/engine.js'
 import type { Observable } from '../contracts/telemetry.js'
+import { ledgerRoutes } from './routes/ledger.js'
 import { queryRoutes } from './routes/query.js'
 import { searchRoutes } from './routes/search.js'
 import { telemetryRoutes } from './routes/telemetry.js'
@@ -26,7 +27,7 @@ export interface BuiltApp {
  * The Engine is a parameter (DI) so this is unit-testable with a mock and the
  * production entrypoint (server.ts) owns the real `createEngine` wiring.
  */
-export function buildApp(engine: Engine & Observable): BuiltApp {
+export function buildApp(engine: Engine & Observable, ledgerPath?: string): BuiltApp {
   const app = new Hono()
   // The standalone web UI runs on a different origin (the Vite dev server), so the
   // browser needs CORS to call this API (preflight + Access-Control-Allow-Origin).
@@ -41,6 +42,9 @@ export function buildApp(engine: Engine & Observable): BuiltApp {
   // telemetry read-surfaces (GET /stats, /health, /log) — replaces the old stub /health
   // with the real engine.health() (observability §5.2).
   app.route('/', telemetryRoutes(engine))
+  // cross-consumer ledger (GET /ledger + SSE /ledger/stream) — the shared-file funnel the
+  // dashboard tails; graceful empty when no CODE_RAG_LEDGER is configured (§5.4).
+  app.route('/', ledgerRoutes(ledgerPath))
   app.get('/ws/trace', traceRoute(engine, upgradeWebSocket))
 
   app.notFound((c) => c.json({ error: 'Not Found' }, 404))

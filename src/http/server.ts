@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
-import { createEngine } from '../package/index.js'
+import { buildEngine, resolveLedgerPath } from '../consume/index.js'
 import { buildApp, resolvePort } from './app.js'
 
 /** Anything with a Node-style `close(callback)` — the @hono/node-server instance. */
@@ -29,11 +29,11 @@ export function makeShutdownHandler(server: Closable, exit: (code: number) => vo
  * gracefully on SIGTERM/SIGINT.
  */
 export function startServer(port: number = resolvePort(process.env.PORT)) {
-  const engine = createEngine({
-    ...(process.env.CORPUS_PATH ? { corpusPath: process.env.CORPUS_PATH } : {}),
-    ...(process.env.ANTHROPIC_API_KEY ? { apiKey: process.env.ANTHROPIC_API_KEY } : {}),
-  })
-  const { app, injectWebSocket } = buildApp(engine)
+  // buildEngine (not createEngine) so, when CODE_RAG_LEDGER is set, THIS server's queries
+  // also append to the shared cross-consumer ledger; the same path feeds GET /ledger.
+  const engine = buildEngine()
+  const ledgerPath = resolveLedgerPath(process.env)
+  const { app, injectWebSocket } = buildApp(engine, ledgerPath)
   const server = serve({ fetch: app.fetch, port })
   injectWebSocket(server)
 
