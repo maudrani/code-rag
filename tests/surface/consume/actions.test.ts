@@ -42,7 +42,7 @@ describe('ask — TKT-409', () => {
     const answerSpy = vi.fn(base.answer)
     const engine: Engine = { ...base, answer: answerSpy as Engine['answer'] }
 
-    const result = await ask(engine, 'where is foo?', { dry: true })
+    const result = await ask(engine, 'where is foo?', 'package', { dry: true })
 
     expect(result.answered).toBe(false)
     expect(result.projection.queryId).toBeTruthy()
@@ -54,7 +54,7 @@ describe('ask — TKT-409', () => {
     const answerSpy = vi.fn(base.answer)
     const engine: Engine = { ...base, answer: answerSpy as Engine['answer'] }
 
-    const result = await ask(engine, 'unanswerable', {})
+    const result = await ask(engine, 'unanswerable', 'package', {})
 
     expect(result.answered).toBe(false)
     expect(result.projection.decision.band).toBe('refuse')
@@ -66,7 +66,7 @@ describe('ask — TKT-409', () => {
     const engine = makeMockEngine({ tokens })
     const seen: string[] = []
 
-    const result = await ask(engine, 'where is foo?', { onToken: (t) => seen.push(t) })
+    const result = await ask(engine, 'where is foo?', 'package', { onToken: (t) => seen.push(t) })
 
     expect(result.answered).toBe(true)
     if (result.answered) expect(result.answer).toBe('foo is here')
@@ -75,14 +75,14 @@ describe('ask — TKT-409', () => {
 
   it('answer without onToken still accumulates the answer', async () => {
     const engine = makeMockEngine({ tokens: ['a', 'b'] })
-    const result = await ask(engine, 'q', {})
+    const result = await ask(engine, 'q', 'package', {})
     expect(result.answered).toBe(true)
     if (result.answered) expect(result.answer).toBe('ab')
   })
 
   it('EDGE: an empty token stream -> answered:true with answer=""', async () => {
     const engine = makeMockEngine({ tokens: [] })
-    const result = await ask(engine, 'q', {})
+    const result = await ask(engine, 'q', 'package', {})
     expect(result.answered).toBe(true)
     if (result.answered) expect(result.answer).toBe('')
   })
@@ -90,7 +90,7 @@ describe('ask — TKT-409', () => {
   it('onProjection fires with the Projection BEFORE the first token (header-first)', async () => {
     const engine = makeMockEngine({ tokens: ['x', 'y'] })
     const order: string[] = []
-    await ask(engine, 'q', {
+    await ask(engine, 'q', 'package', {
       onProjection: () => order.push('projection'),
       onToken: () => order.push('token'),
     })
@@ -100,8 +100,24 @@ describe('ask — TKT-409', () => {
   it('onProjection fires on the dry path too (right after query)', async () => {
     const engine = makeMockEngine()
     const seen: unknown[] = []
-    const result = await ask(engine, 'q', { dry: true, onProjection: (p) => seen.push(p) })
+    const result = await ask(engine, 'q', 'package', {
+      dry: true,
+      onProjection: (p) => seen.push(p),
+    })
     expect(seen).toHaveLength(1)
     expect(seen[0]).toBe(result.projection)
+  })
+
+  it('threads the EXPLICIT consumer to engine.query (not derived from dry) — TKT-424', async () => {
+    const base = makeMockEngine()
+    const querySpy = vi.fn(base.query)
+    const engine: Engine = { ...base, query: querySpy as Engine['query'] }
+
+    await ask(engine, 'q', 'mcp', { dry: true })
+    // the 3rd arg is the consumer 'mcp' — NOT 'cli-dry' (the old mode/consumer conflation)
+    expect(querySpy).toHaveBeenCalledWith('q', [], 'mcp')
+
+    await ask(engine, 'q2', 'cli', {})
+    expect(querySpy).toHaveBeenLastCalledWith('q2', [], 'cli')
   })
 })

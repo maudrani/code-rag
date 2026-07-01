@@ -38,7 +38,7 @@ export interface SearchToolArgs {
  * shape the CLI `--json` emits.
  */
 export async function askTool(engine: Engine, args: AskToolArgs): Promise<CallToolResult> {
-  const result = await ask(engine, args.query, { dry: args.dry ?? false })
+  const result = await ask(engine, args.query, 'mcp', { dry: args.dry ?? false })
   const dto = serializeProjection(result.projection)
   const text = result.answered ? result.answer : projectionSummary(dto)
   return { content: [{ type: 'text', text }], structuredContent: structured(dto) }
@@ -49,7 +49,7 @@ export async function askTool(engine: Engine, args: AskToolArgs): Promise<CallTo
  * → query() alone), no answer, no cost. structuredContent = the DTO.
  */
 export async function searchTool(engine: Engine, args: SearchToolArgs): Promise<CallToolResult> {
-  const result = await ask(engine, args.query, { dry: true })
+  const result = await ask(engine, args.query, 'mcp', { dry: true })
   const dto = serializeProjection(result.projection)
   return {
     content: [{ type: 'text', text: projectionSummary(dto) }],

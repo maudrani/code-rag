@@ -1,6 +1,6 @@
 import type { Engine, EngineConfig } from '../contracts/engine.js'
-import type { Projection, Turn } from '../contracts/projection.js'
-import type { Observable } from '../contracts/telemetry.js'
+import type { ConsumerIntent, Projection, Turn } from '../contracts/projection.js'
+import type { Consumer, Observable } from '../contracts/telemetry.js'
 import { createEngine } from '../package/index.js'
 
 /**
@@ -47,19 +47,29 @@ export type AskResult =
   | { projection: Projection; answer: string; answered: true }
 
 /**
- * ask — the shared query→branch→answer orchestration both transports bind.
- * Always runs the deterministic membrane (`query`). If `dry` or the gate refused,
- * it stops there (no LLM call). Otherwise it streams `answer()`, pushing each
- * token to `onToken` and accumulating the full answer.
+ * ask — the shared query→branch→answer orchestration each transport binds. Always
+ * runs the deterministic membrane (`query`). If `dry` or the gate refused, it stops
+ * there (no LLM call). Otherwise it streams `answer()`, pushing each token to
+ * `onToken` and accumulating the full answer.
+ *
+ * `consumer` is the TRANSPORT identity (mcp | cli | http | package) — the ledger tag.
+ * It is EXPLICIT (not derived from `dry`): the earlier `dry ? 'cli-dry' : 'package'`
+ * conflated mode with consumer, so every MCP/CLI query was mislabeled (TKT-424). `dry`
+ * is a MODE (whether to stream answer()), orthogonal to who is asking.
  */
 export async function ask(
   engine: Engine,
   question: string,
+  consumer: Consumer,
   opts: AskOptions = {},
 ): Promise<AskResult> {
   const history = opts.history ?? []
-  // intent is currently cosmetic (the membrane ignores it); 'cli-dry' marks the no-LLM path.
-  const projection = await engine.query(question, history, opts.dry ? 'cli-dry' : 'package')
+  // The consumer IS the ledger tag. BRIDGE: Consumer and ConsumerIntent share
+  // http/mcp/package but diverge on cli/cli-dry/web; the master is aligning
+  // ConsumerIntent = Consumer (dropping 'cli-dry'). At runtime the membrane passes every
+  // non-'cli-dry' value straight through, so the tag is already correct — the cast is the
+  // temporary type bridge, removed when the contract aligns (coordinated, RULE-019).
+  const projection = await engine.query(question, history, consumer as ConsumerIntent)
   opts.onProjection?.(projection) // header-first: projection known before any answer token
 
   if (opts.dry || projection.decision.band !== 'answer') {

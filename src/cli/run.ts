@@ -102,7 +102,7 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
       opts.onToken = (t) => deps.stdout.write(t)
     }
 
-    const result = await ask(makeEngine(), cmd.query, opts)
+    const result = await ask(makeEngine(), cmd.query, 'cli', opts)
 
     if (cmd.json) {
       deps.stdout.write(`${jsonOut(result.projection)}\n`)
