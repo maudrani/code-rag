@@ -117,11 +117,12 @@ clone-and-run reliability, not for pure NL↔code recall. Full table + reproduct
 
 Before any model runs, a pure score-gate reads two signals:
 
-- **Grounding** (lexical overlap — do the query's terms actually appear in the retrieved
-  code?) → a `refuse` / `answer` band. If the code doesn't support an answer, the assistant
-  **refuses** rather than invent one. (A real-corpus dogfood proved the RRF fused score is
-  a poor grounding signal — rank-based, no calibrated magnitude — so the gate scores lexical
-  overlap instead.)
+- **Grounding** — two *additive* signals: lexical overlap (do the query's terms appear in the
+  retrieved code?) **OR** the raw dense cosine of the top hits (absolute semantic relevance). If
+  neither grounds, the assistant **refuses** rather than invent one. (A real-corpus dogfood proved
+  the RRF fused score is a poor grounding signal — rank-based, no calibrated magnitude — so the gate
+  scores lexical overlap; a raw-cosine floor was added so a semantically-strong pure-NL query is no
+  longer false-refused for want of exact terms. The floor is corpus-tuned, never a baked confidence.)
 - **Complexity** (distinct files + query intent) → a model **tier** (`cheap` haiku vs
   `strong` sonnet) — cost routing.
 
@@ -236,9 +237,9 @@ history stays a clean, attributed, per-layer narrative.
   subsystem work" queries.
 - **Compiled-bin packaging** — the CLI + MCP run via `tsx` today (`npm run cli` / `mcp`);
   the published `dist` bin additionally needs the tree-sitter `.wasm` copied into `dist`.
-- **Grounding is lexical** — the next precision lever is a raw-cosine or cross-encoder
-  **reranker** signal applied after fusion on the top-K (the dogfood showed RRF ranks
-  can't ground).
+- **Reranker** — grounding now ORs lexical overlap with the raw dense cosine (the absolute signal
+  RRF ranks can't express). The remaining precision lever is a cross-encoder **reranker** applied
+  after fusion on the top-K.
 - **Embedder exits cleanly** (resolved) — `onnxruntime-node` ≤1.21 aborts the host process on
   teardown on macOS (`libc++abi: mutex lock failed`, exit 134 — `onnxruntime#24579`, fixed upstream
   by PR#26445). `@huggingface/transformers` pins it to 1.21.0, so the build overrides it to ≥1.24.3
