@@ -17,6 +17,12 @@ export interface EngineConfig {
   corpusPath?: string
   /** LLM API key — the ONLY key clone-and-run needs (embeddings are local, ADR-003) */
   apiKey?: string
+  /**
+   * enable the local-ONNX dense leg — recall 0.50 / exact-id 1.00 vs 0.273 (BM25+structural only).
+   * Default: ON in a live process, OFF under vitest (the model download would slow the deterministic
+   * suite). First live use downloads the MiniLM model (~25MB); set `false` for instant fully-offline.
+   */
+  dense?: boolean
 }
 
 /**

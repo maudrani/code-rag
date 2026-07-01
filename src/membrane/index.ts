@@ -29,10 +29,11 @@ import type {
   Turn,
   Unsubscribe,
 } from '../contracts/index.js'
-import { Bm25Index } from '../index/bm25.js'
+import { buildIndexedStore } from '../index/build.js'
+import { createOnnxEmbedder, type Embedder } from '../index/embed.js'
+import type { SqliteStore } from '../index/store.js'
 import { createClaudeProvider } from '../provider/claude.js'
 import { type RetrieveDeps, retrieve } from '../retrieve/retrieve.js'
-import { buildStructuralIndex } from '../retrieve/structural.js'
 import { topScoresByLeg } from '../retrieve/telemetry.js'
 import { project } from './project.js'
 import { needsRewrite } from './resolve.js'
@@ -70,7 +71,8 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
 
   // Index state — built at ingest, held for every query. The membrane is the holder.
   let deps: RetrieveDeps | null = null
-  let bm25Handle: Bm25Index | null = null
+  let storeHandle: SqliteStore | null = null
+  let embedderHandle: Embedder | null = null
   let ingestStats = { filesIndexed: 0, chunks: 0 }
   let indexing: Promise<IngestReport> | null = null
   let queryCounter = 0
@@ -106,15 +108,17 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     const started = Date.now()
     await initParser() // async tree-sitter init — required before chunking
     const { chunks, files } = ingestAndChunk(repoPath)
-    bm25Handle?.close() // release the previous SQLite handle on re-ingest
-    const bm25 = new Bm25Index()
-    bm25.index(chunks)
-    bm25Handle = bm25
-    deps = {
-      bm25,
-      structural: buildStructuralIndex(chunks),
-      chunks: new Map(chunks.map((c) => [c.id, c])),
-    }
+    storeHandle?.close() // release the previous store handle on re-ingest
+    await embedderHandle?.dispose?.() // release the previous ONNX pipeline (adopt B2/FTR-038)
+    // Dense ON for a live process (recall 0.50 / exact-id 1.00), OFF under vitest (no 25MB model
+    // download -> fast deterministic tests); `config.dense` overrides either way. buildIndexedStore
+    // threads ONE embedder through index() + retrievalDeps() so the leg is all-or-nothing (FTR-22).
+    const denseOn = config.dense ?? process.env.VITEST === undefined
+    const embedder = denseOn ? createOnnxEmbedder() : undefined
+    embedderHandle = embedder ?? null
+    const built = await buildIndexedStore(chunks, embedder ? { embedder } : {})
+    storeHandle = built.store
+    deps = built.deps
     ingestStats = { filesIndexed: files.length, chunks: chunks.length }
 
     // Hold the per-layer telemetry the Observable surface reads, via the specialists' pure
