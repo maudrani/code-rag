@@ -1,6 +1,6 @@
 import type { Event } from './events.js'
 import type { ConsumerIntent, Projection, Turn } from './projection.js'
-import type { AnswerChunk } from './provider.js'
+import type { AnswerChunk, Provider } from './provider.js'
 import type { Observable } from './telemetry.js'
 
 export interface IngestReport {
@@ -29,6 +29,10 @@ export interface EngineConfig {
    * ~seconds warm. Absent → an in-memory index (always cold). A model-id change forces a cold rebuild.
    */
   indexPath?: string
+  /** an injected LLM Provider — a TEST SEAM (FTR-4 TKT-003): a test passes a deterministic fake so the
+   *  full query -> answer flow is E2E-testable through L5 with no network/key. Absent -> the real Claude
+   *  provider (createClaudeProvider(apiKey)), exactly as production. */
+  provider?: Provider
 }
 
 /**

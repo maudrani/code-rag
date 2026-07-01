@@ -70,7 +70,8 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
   // client is only constructed when the LLM residue or `answer` is actually used.
   let providerInstance: Provider | null = null
   const getProvider = (): Provider => {
-    providerInstance ??= createClaudeProvider(config.apiKey)
+    // FTR-4 TKT-003: an injected provider (test seam) wins; else lazily build the real Claude provider.
+    providerInstance ??= config.provider ?? createClaudeProvider(config.apiKey)
     return providerInstance
   }
 
