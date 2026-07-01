@@ -1,0 +1,38 @@
+# docker compose up --build  ->  the code-rag HTTP server on :8787 (+ the web UI on :5173).
+#
+# Env: set ANTHROPIC_API_KEY (the only key clone-and-run needs — embeddings are local; search /
+# --dry need none). CORPUS_PATH picks the host dir to index (mounted read-only). The shared ledger
+# survives restarts and is what the web dashboard tails (the cross-consumer funnel, FTR-46).
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8787:8787"
+    environment:
+      - PORT=8787
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CORPUS_PATH=/corpus
+      - CODE_RAG_LEDGER=/data/ledger.jsonl
+    volumes:
+      - ${CORPUS_PATH:-./}:/corpus:ro   # the repo to index (read-only)
+      - ledger:/data                     # the shared cross-consumer ledger (the web tails it)
+    restart: unless-stopped
+
+  # The standalone web UI (frontend row) — served static by nginx from the Vite build.
+  # Prereq: build it first  ->  `npm --prefix web ci && npm --prefix web run build`  (-> web/dist).
+  # A self-contained web image (a web/Dockerfile with a VITE_API_BASE build-arg) is a frontend follow-up.
+  web:
+    image: nginx:alpine
+    ports:
+      - "5173:80"
+    volumes:
+      - ./web/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  ledger:

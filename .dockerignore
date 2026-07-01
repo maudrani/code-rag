@@ -1,0 +1,30 @@
+# Keep the Docker build context small + reproducible — everything below is rebuilt
+# in-image (node_modules, dist) or irrelevant to the server (web/, the trinity workspace).
+
+# Rebuilt in the image
+node_modules
+dist
+*.tsbuildinfo
+
+# The frontend row's app (the server image doesn't need it; the web has its own build)
+web/node_modules
+web/dist
+
+# The kernel-trinity workspace + git + CI
+_workspace
+.git
+.github
+.husky
+
+# Tests + docs (not shipped in the runtime)
+tests
+**/*.test.ts
+coverage
+*.md
+
+# Env + local noise (keep the example)
+.env
+.env.*
+!.env.example
+.DS_Store
+scratchpad

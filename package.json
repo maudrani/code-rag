@@ -11,7 +11,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/src/chunk/grammars && cp src/chunk/grammars/*.wasm dist/src/chunk/grammars/",
     "serve": "tsx src/http/server.ts",
     "cli": "tsx src/cli/index.ts",
     "mcp": "tsx src/mcp/serve.ts",
