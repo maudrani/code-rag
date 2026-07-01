@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { getHealth, getLogPayload, getStats } from '../../../src/consume/index.js'
+import {
+  getHealth,
+  getLogPayload,
+  getStats,
+  getSymbolsPayload,
+} from '../../../src/consume/index.js'
 import { buildApp } from '../../../src/http/app.js'
 import { makeMockEngine } from '../fixtures/mock-engine.js'
 
@@ -61,6 +66,12 @@ describe('HTTP telemetry routes — GET /stats,/health,/log (TKT-420)', () => {
     expect((await req('/log?consumer=bogus')).status).toBe(400)
     expect((await req('/log?limit=0')).status).toBe(400)
   })
+
+  it('GET /symbols → 200 + { symbols } (= await getSymbolsPayload(engine))', async () => {
+    const res = await req('/symbols')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(await getSymbolsPayload(ref))
+  })
 })
 
 describe('HTTP telemetry — cross-origin (the boundary the CORS bug taught us)', () => {
@@ -72,11 +83,13 @@ describe('HTTP telemetry — cross-origin (the boundary the CORS bug taught us)'
     expect(res.headers.get('access-control-allow-origin')).not.toBeNull()
   })
 
-  it('GET /health + /log carry ACAO cross-origin', async () => {
+  it('GET /health + /log + /symbols carry ACAO cross-origin', async () => {
     const health = await req('/health', { headers: { Origin: ORIGIN } })
     expect(health.headers.get('access-control-allow-origin')).not.toBeNull()
     const log = await req('/log', { headers: { Origin: ORIGIN } })
     expect(log.headers.get('access-control-allow-origin')).not.toBeNull()
+    const symbols = await req('/symbols', { headers: { Origin: ORIGIN } })
+    expect(symbols.headers.get('access-control-allow-origin')).not.toBeNull()
   })
 
   it('a 400 error response STILL carries ACAO (the browser must read the error)', async () => {

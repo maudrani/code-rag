@@ -15,10 +15,17 @@ async function connect(engine: Engine & Observable = makeMockEngine()) {
 }
 
 describe('buildMcpServer — real client round-trip (TKT-413)', () => {
-  it('registers the retrieval (ask, search) + telemetry (stats, health, log) tools', async () => {
+  it('registers the retrieval (ask, search) + read-surface (stats, health, log, symbols) tools', async () => {
     const { client, server } = await connect()
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name).sort()).toEqual(['ask', 'health', 'log', 'search', 'stats'])
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'ask',
+      'health',
+      'log',
+      'search',
+      'stats',
+      'symbols',
+    ])
     await server.close()
   })
 

@@ -5,6 +5,7 @@ import {
   getHealth,
   getLog,
   getStats,
+  getSymbolsPayload,
   readLedger,
   resolveLedgerPath,
 } from '../consume/index.js'
@@ -18,6 +19,7 @@ import {
   humanHealth,
   humanLog,
   humanStats,
+  humanSymbols,
   jsonOut,
   telemetryJson,
 } from './render.js'
@@ -30,6 +32,7 @@ usage:
   code-rag stats [--layer L] [--json]        per-layer telemetry (L: ingest|chunk|index|retrieve|answer)
   code-rag health [--json]                   aggregate health (exit 1 if status is 'down')
   code-rag log [--consumer C] [--tail N] [--json]   the cross-consumer query ledger
+  code-rag symbols [--json]                  the indexed code symbols (path, symbol, kind, span)
 
 flags:
   --dry          deterministic retrieval only — no LLM, no cost, no API key
@@ -100,6 +103,14 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
       const entries =
         ledgerPath !== undefined ? readLedger(ledgerPath, opts) : getLog(makeEngine(), opts)
       deps.stdout.write(cmd.json ? `${telemetryJson({ entries })}\n` : humanLog(entries, useColor))
+      return EXIT.OK
+    }
+    if (cmd.command === 'symbols') {
+      // Read-only, no LLM, no key. Async: the engine ensures the index then projects its chunks.
+      const payload = await getSymbolsPayload(makeEngine())
+      deps.stdout.write(
+        cmd.json ? `${telemetryJson(payload)}\n` : humanSymbols(payload.symbols, useColor),
+      )
       return EXIT.OK
     }
 

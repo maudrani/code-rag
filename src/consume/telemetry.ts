@@ -8,6 +8,7 @@ import type {
   IngestTelemetry,
   Observable,
   QueryLogEntry,
+  SymbolEntry,
 } from '../contracts/index.js'
 
 /**
@@ -118,4 +119,24 @@ export function getLogPayload(
   opts?: { consumer?: Consumer; limit?: number },
 ): LogPayload {
   return { entries: getLog(engine, opts) }
+}
+
+/** The `symbols` WIRE payload — an OBJECT (not a bare array), so MCP structuredContent can carry it
+ *  and the CLI/MCP/HTTP shapes stay byte-identical (parity by construction). Mirrors LogPayload. */
+export interface SymbolsPayload {
+  symbols: SymbolEntry[]
+}
+
+/**
+ * getSymbols — the corpus symbol read-surface (autocomplete + a corpus tree). ASYNC: the membrane
+ * ensures the index and projects its chunks to their identity (path, symbol, kind, lang, span) — it
+ * works with no prior query. The only read-surface verb that awaits (symbols() returns a Promise).
+ */
+export async function getSymbols(engine: Observable): Promise<SymbolEntry[]> {
+  return engine.symbols()
+}
+
+/** getSymbolsPayload — the single wire shape for `symbols` across every transport. */
+export async function getSymbolsPayload(engine: Observable): Promise<SymbolsPayload> {
+  return { symbols: await getSymbols(engine) }
 }

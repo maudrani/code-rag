@@ -5,6 +5,8 @@ import {
   getLog,
   getLogPayload,
   getStats,
+  getSymbols,
+  getSymbolsPayload,
   isConsumer,
   isStatsLayer,
   STATS_LAYERS,
@@ -18,6 +20,7 @@ import type {
   HealthReport,
   Observable,
   QueryLogEntry,
+  SymbolEntry,
 } from '../../../src/contracts/index.js'
 
 // ─── fixtures — a fully-populated holding snapshot + an empty one ──────────────
@@ -66,6 +69,22 @@ const HEALTH: HealthReport = {
   ts: 3000,
 }
 const LEDGER: QueryLogEntry[] = [RETRIEVE, { ...RETRIEVE, queryId: 'q2', consumer: 'mcp' }]
+const SYMBOLS: SymbolEntry[] = [
+  {
+    path: 'a.ts',
+    symbol: 'foo',
+    kind: 'function',
+    lang: 'typescript',
+    span: { startLine: 1, endLine: 9 },
+  },
+  {
+    path: 'b.ts',
+    symbol: 'Bar',
+    kind: 'class',
+    lang: 'typescript',
+    span: { startLine: 3, endLine: 40 },
+  },
+]
 
 /** A minimal Observable stub — fixed output, spy-able. */
 function stubObservable(over: Partial<Observable> = {}): Observable {
@@ -163,6 +182,28 @@ describe('consume/telemetry — the read-surface SSOT (TKT-417)', () => {
     it('getLogPayload wraps the ledger in { entries } (the MCP-safe parity shape)', () => {
       const engine = stubObservable()
       expect(getLogPayload(engine)).toEqual({ entries: LEDGER })
+    })
+  })
+
+  describe('getSymbols / getSymbolsPayload — the symbol read-surface (TKT-431)', () => {
+    it('getSymbols awaits engine.symbols() and returns the entries', async () => {
+      const symbols = vi.fn(async () => SYMBOLS)
+      const engine = stubObservable({ symbols })
+      await expect(getSymbols(engine)).resolves.toBe(SYMBOLS)
+      expect(symbols).toHaveBeenCalledTimes(1)
+    })
+    it('getSymbolsPayload wraps the entries in { symbols } (the MCP-safe parity shape)', async () => {
+      const engine = stubObservable({ symbols: vi.fn(async () => SYMBOLS) })
+      await expect(getSymbolsPayload(engine)).resolves.toEqual({ symbols: SYMBOLS })
+    })
+    it('is wire-safe: JSON round-trips unchanged', async () => {
+      const engine = stubObservable({ symbols: vi.fn(async () => SYMBOLS) })
+      const payload = await getSymbolsPayload(engine)
+      expect(JSON.parse(JSON.stringify(payload))).toEqual(payload)
+    })
+    it('empty index → { symbols: [] } (not undefined, not a throw)', async () => {
+      const engine = stubObservable() // default symbols → []
+      await expect(getSymbolsPayload(engine)).resolves.toEqual({ symbols: [] })
     })
   })
 })

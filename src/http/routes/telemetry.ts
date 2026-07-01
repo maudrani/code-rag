@@ -4,6 +4,7 @@ import {
   getHealth,
   getLogPayload,
   getStats,
+  getSymbolsPayload,
   isConsumer,
   isStatsLayer,
 } from '../../consume/index.js'
@@ -62,6 +63,11 @@ export function telemetryRoutes(engine: Engine & Observable): Hono {
     }
     return c.json(getLogPayload(engine, opts))
   })
+
+  // GET /symbols — the corpus symbols (path, symbol, kind, lang, span) as { symbols }, for the
+  // frontend autocomplete + a corpus tree it folds from `path`. Read-only, no LLM. Async: the
+  // engine ensures the index (no prior query needed) then projects each chunk to its identity.
+  app.get('/symbols', async (c) => c.json(await getSymbolsPayload(engine)))
 
   return app
 }

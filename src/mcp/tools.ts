@@ -1,6 +1,13 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { LayerStats, ProjectionDTO, StatsLayer } from '../consume/index.js'
-import { ask, getHealth, getLogPayload, getStats, serializeProjection } from '../consume/index.js'
+import {
+  ask,
+  getHealth,
+  getLogPayload,
+  getStats,
+  getSymbolsPayload,
+  serializeProjection,
+} from '../consume/index.js'
 import type { Engine } from '../contracts/engine.js'
 import type { Citation } from '../contracts/projection.js'
 import type { Consumer, EngineTelemetry, HealthReport, Observable } from '../contracts/telemetry.js'
@@ -106,6 +113,16 @@ export function logTool(engine: Observable, args: LogToolArgs = {}): CallToolRes
   const payload = getLogPayload(engine, args)
   return {
     content: [{ type: 'text', text: `${payload.entries.length} ledger entries` }],
+    structuredContent: structured(payload),
+  }
+}
+
+/** symbolsTool — the `symbols` tool: the indexed symbols as { symbols } (parity with CLI/HTTP).
+ *  Async: the engine ensures the index (no prior query needed) then projects each chunk's identity. */
+export async function symbolsTool(engine: Observable): Promise<CallToolResult> {
+  const payload = await getSymbolsPayload(engine)
+  return {
+    content: [{ type: 'text', text: `${payload.symbols.length} symbols indexed` }],
     structuredContent: structured(payload),
   }
 }

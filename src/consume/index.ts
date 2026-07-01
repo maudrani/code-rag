@@ -9,13 +9,21 @@ export type { LedgerSink } from './ledger.js'
 export { JsonlLedgerSink, readLedger, resolveLedgerPath, withLedger } from './ledger.js'
 export type { ProjectionDTO, SerializedResult } from './serialize.js'
 export { serializeProjection } from './serialize.js'
-export type { LayerStats, LayerTelemetry, LogPayload, StatsLayer } from './telemetry.js'
+export type {
+  LayerStats,
+  LayerTelemetry,
+  LogPayload,
+  StatsLayer,
+  SymbolsPayload,
+} from './telemetry.js'
 export {
   CONSUMERS,
   getHealth,
   getLog,
   getLogPayload,
   getStats,
+  getSymbols,
+  getSymbolsPayload,
   isConsumer,
   isStatsLayer,
   STATS_LAYERS,

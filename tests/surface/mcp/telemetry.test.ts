@@ -1,9 +1,14 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe, expect, it } from 'vitest'
-import { getHealth, getLogPayload, getStats } from '../../../src/consume/index.js'
+import {
+  getHealth,
+  getLogPayload,
+  getStats,
+  getSymbolsPayload,
+} from '../../../src/consume/index.js'
 import { buildMcpServer } from '../../../src/mcp/server.js'
-import { healthTool, logTool, statsTool } from '../../../src/mcp/tools.js'
+import { healthTool, logTool, statsTool, symbolsTool } from '../../../src/mcp/tools.js'
 import { makeMockEngine } from '../fixtures/mock-engine.js'
 
 async function connect() {
@@ -36,13 +41,32 @@ describe('MCP telemetry tools — unit (TKT-419)', () => {
       getLogPayload(ref, { consumer: 'mcp' }),
     )
   })
+  it('symbolsTool → structuredContent = await getSymbolsPayload(engine)', async () => {
+    const res = await symbolsTool(makeMockEngine())
+    expect(res.structuredContent).toEqual(await getSymbolsPayload(ref))
+    expect(res.content[0]?.type).toBe('text')
+  })
 })
 
 describe('MCP telemetry tools — real client round-trip (TKT-419)', () => {
-  it('registers ask + search + stats + health + log', async () => {
+  it('registers ask + search + stats + health + log + symbols', async () => {
     const { client, server } = await connect()
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name).sort()).toEqual(['ask', 'health', 'log', 'search', 'stats'])
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'ask',
+      'health',
+      'log',
+      'search',
+      'stats',
+      'symbols',
+    ])
+    await server.close()
+  })
+
+  it('callTool symbols → structuredContent identical to getSymbolsPayload(engine)', async () => {
+    const { client, server } = await connect()
+    const res = await client.callTool({ name: 'symbols', arguments: {} })
+    expect(res.structuredContent).toEqual(await getSymbolsPayload(ref))
     await server.close()
   })
 

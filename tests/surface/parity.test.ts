@@ -78,6 +78,7 @@ const SURFACES = [
     tool: 'log',
     args: { consumer: 'mcp' },
   },
+  { name: 'symbols', cli: ['symbols'], http: '/symbols', tool: 'symbols', args: {} },
 ] as const
 
 describe('transport parity — CLI ≡ MCP ≡ HTTP, byte-identical (TKT-421 / SC-05)', () => {

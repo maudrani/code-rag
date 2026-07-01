@@ -13,6 +13,7 @@ export type ParsedCommand =
   | { command: 'stats'; layer?: StatsLayer; json: boolean }
   | { command: 'health'; json: boolean }
   | { command: 'log'; consumer?: Consumer; tail?: number; json: boolean }
+  | { command: 'symbols'; json: boolean }
   | { command: 'help' }
   | { command: 'version' }
 
@@ -77,9 +78,11 @@ export function parseCli(argv: string[]): ParsedCommand {
       if (values.tail !== undefined) result.tail = parseTail(values.tail)
       return result
     }
+    case 'symbols':
+      return { command: 'symbols', json }
     default:
       throw new CliError(
-        `unknown command: ${command ?? '(none)'} (expected: ask | stats | health | log)`,
+        `unknown command: ${command ?? '(none)'} (expected: ask | stats | health | log | symbols)`,
         EXIT.USAGE,
       )
   }

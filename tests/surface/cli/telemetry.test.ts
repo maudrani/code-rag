@@ -4,9 +4,14 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { CliError } from '../../../src/cli/errors.js'
 import { parseCli } from '../../../src/cli/parse.js'
-import { humanHealth, humanLog, humanStats } from '../../../src/cli/render.js'
+import { humanHealth, humanLog, humanStats, humanSymbols } from '../../../src/cli/render.js'
 import { type RunDeps, run } from '../../../src/cli/run.js'
-import { getHealth, getLogPayload, getStats } from '../../../src/consume/index.js'
+import {
+  getHealth,
+  getLogPayload,
+  getStats,
+  getSymbolsPayload,
+} from '../../../src/consume/index.js'
 import { MOCK_HEALTH, MOCK_TELEMETRY, makeMockEngine } from '../fixtures/mock-engine.js'
 
 // ─── parse ────────────────────────────────────────────────────────────────────
@@ -34,6 +39,12 @@ describe('parseCli — telemetry commands (TKT-418)', () => {
   })
   it('log with no filters omits optional keys', () => {
     expect(parseCli(['log'])).toEqual({ command: 'log', json: false })
+  })
+  it('symbols with no flags', () => {
+    expect(parseCli(['symbols'])).toEqual({ command: 'symbols', json: false })
+  })
+  it('symbols --json', () => {
+    expect(parseCli(['symbols', '--json'])).toEqual({ command: 'symbols', json: true })
   })
 
   // failure twins — every misuse is EXIT.USAGE (code 2), never a raw throw
@@ -70,6 +81,23 @@ describe('render — telemetry views (TKT-418)', () => {
     expect(humanLog([], false)).toContain('no queries')
     const entry = MOCK_TELEMETRY.lastQuery?.retrieve
     if (entry) expect(humanLog([entry], false)).toContain(entry.queryId)
+  })
+  it('humanSymbols shows one line per symbol, and a placeholder when empty', () => {
+    expect(humanSymbols([], false)).toContain('no symbols')
+    const out = humanSymbols(
+      [
+        {
+          path: 'a.ts',
+          symbol: 'foo',
+          kind: 'function',
+          lang: 'typescript',
+          span: { startLine: 1, endLine: 9 },
+        },
+      ],
+      false,
+    )
+    expect(out).toContain('a.ts')
+    expect(out).toContain('foo')
   })
 })
 
@@ -137,6 +165,12 @@ describe('run — telemetry commands (TKT-418)', () => {
     await run(['log', '--consumer', 'mcp', '--json'], deps)
     expect(JSON.parse(out().trim())).toEqual(getLogPayload(makeMockEngine(), { consumer: 'mcp' }))
   })
+  it('symbols --json emits { symbols } via getSymbolsPayload (the SSOT)', async () => {
+    const { deps, out } = capture()
+    const code = await run(['symbols', '--json'], deps)
+    expect(code).toBe(0)
+    expect(JSON.parse(out().trim())).toEqual(await getSymbolsPayload(makeMockEngine()))
+  })
   it('non-json stats writes a human view', async () => {
     const { deps, out } = capture()
     await run(['stats', '--layer', 'index'], deps)
@@ -149,6 +183,7 @@ const here = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = join(here, '..', '..', '..')
 const cliEntry = join(repoRoot, 'src', 'cli', 'index.ts')
 const tsxBin = join(repoRoot, 'node_modules', '.bin', 'tsx')
+const fixtureCorpus = join(here, 'fixtures', 'corpus')
 
 function runCli(args: string[]) {
   const env: NodeJS.ProcessEnv = { ...process.env, ANTHROPIC_API_KEY: undefined }
@@ -179,5 +214,23 @@ describe('CLI telemetry e2e (real engine, no key) — TKT-418', () => {
     expect(res.status).toBe(0)
     const parsed = JSON.parse(res.stdout.trim()) as { entries: unknown }
     expect(Array.isArray(parsed.entries)).toBe(true)
+  }, 30000)
+
+  it('symbols --json: exit 0 + { symbols:[...] } from the real engine over the fixture corpus (no key)', () => {
+    // symbols() forces a real index build; point at the tiny fixture corpus so it's fast.
+    // VITEST is inherited by the subprocess → the dense/ONNX leg stays off (membrane denseOn gate).
+    const res = spawnSync(tsxBin, [cliEntry, 'symbols', '--json'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: { ...process.env, ANTHROPIC_API_KEY: undefined, CORPUS_PATH: fixtureCorpus },
+    })
+    expect(res.status, res.stderr).toBe(0)
+    const parsed = JSON.parse(res.stdout.trim()) as {
+      symbols: Array<{ path: string; span: unknown }>
+    }
+    expect(Array.isArray(parsed.symbols)).toBe(true)
+    expect(parsed.symbols.length).toBeGreaterThan(0) // sample.ts yields at least one symbol
+    expect(parsed.symbols[0]).toHaveProperty('path')
+    expect(parsed.symbols[0]).toHaveProperty('span')
   }, 30000)
 })

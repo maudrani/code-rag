@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { CONSUMERS, STATS_LAYERS } from '../consume/index.js'
 import type { Engine } from '../contracts/engine.js'
 import type { Consumer, Observable } from '../contracts/telemetry.js'
-import { askTool, healthTool, logTool, searchTool, statsTool } from './tools.js'
+import { askTool, healthTool, logTool, searchTool, statsTool, symbolsTool } from './tools.js'
 
 const SERVER_NAME = 'code-rag'
 const SERVER_VERSION = '0.1.0'
@@ -91,6 +91,16 @@ export function buildMcpServer(engine: Engine & Observable): McpServer {
       if (limit !== undefined) args.limit = limit
       return logTool(engine, args)
     },
+  )
+
+  server.registerTool(
+    'symbols',
+    {
+      description:
+        'The indexed code symbols (path, symbol, kind, lang, span) for autocomplete + a corpus tree the client folds from `path`. Read-only, no LLM, no cost. structuredContent carries { symbols }.',
+      inputSchema: {},
+    },
+    async () => symbolsTool(engine),
   )
 
   return server

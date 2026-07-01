@@ -1,5 +1,6 @@
 import type { LayerStats } from '../consume/index.js'
 import { serializeProjection } from '../consume/serialize.js'
+import type { SymbolEntry } from '../contracts/chunk.js'
 import type { Citation, GateDecision, Projection } from '../contracts/projection.js'
 import type { RankedChunk } from '../contracts/retrieval.js'
 import type { EngineTelemetry, HealthReport, QueryLogEntry } from '../contracts/telemetry.js'
@@ -93,6 +94,16 @@ export function humanLog(entries: QueryLogEntry[], useColor: boolean): string {
   const lines = entries.map(
     (e) =>
       `  ${e.queryId} [${e.consumer}] ${paint(e.band, BAND_COLOR[e.band], useColor)} ${e.latencyMs}ms — ${e.query}`,
+  )
+  return `${lines.join('\n')}\n`
+}
+
+/** humanSymbols — the readable `symbols` view: one line per symbol (path:span symbol (kind)). */
+export function humanSymbols(symbols: SymbolEntry[], useColor: boolean): string {
+  if (symbols.length === 0) return `${paint('(no symbols indexed)', 'dim', useColor)}\n`
+  const lines = symbols.map(
+    (s) =>
+      `  ${s.path}:${s.span.startLine}-${s.span.endLine} ${s.symbol} ${paint(`(${s.kind})`, 'dim', useColor)}`,
   )
   return `${lines.join('\n')}\n`
 }
