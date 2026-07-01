@@ -29,6 +29,7 @@ import {
   toFtsQuery,
 } from './bm25.js'
 import { decodeVector, type Embedder, encodeVector } from './embed.js'
+import { diffManifest, type FileStat, type ManifestEntry } from './manifest.js'
 
 export interface SqliteStoreOptions {
   /** file path, or ':memory:' (default). WAL is enabled for a file path. */
@@ -53,6 +54,27 @@ export interface SqliteStoreOptions {
 export interface IndexOptions {
   /** if present, embed each chunk's code → stored BLOB; if absent, the embedding column stays NULL. */
   embedder?: Embedder
+}
+
+/**
+ * Chunk ONLY the given (changed) file paths — injected into syncIndex so the store never re-reads or
+ * re-parses UNCHANGED files (the warm-restart win). The caller (membrane) wires this over ingest-chunk.
+ */
+export type ChunkChanged = (paths: string[]) => Chunk[] | Promise<Chunk[]>
+
+export interface SyncOptions {
+  embedder?: Embedder
+  /** model identity (e.g. 'Xenova/all-MiniLM-L6-v2:q8'); a change invalidates the persisted vectors ⇒ cold rebuild. Default 'none'. */
+  modelId?: string
+}
+
+/** What a warm sync did — the observability of the skip (embeddedChunks 0 ⇒ a fully-warm start). */
+export interface SyncReport {
+  cold: boolean
+  reusedFiles: number
+  reindexedFiles: number
+  deletedFiles: number
+  embeddedChunks: number
 }
 
 interface ChunkRow {
@@ -110,6 +132,16 @@ export class SqliteStore {
         dst TEXT NOT NULL,
         PRIMARY KEY (src, dst)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS file_manifest (
+        path TEXT PRIMARY KEY,
+        mtime_ms REAL NOT NULL,
+        size INTEGER NOT NULL,
+        chunk_ids TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS index_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      ) STRICT;
     `)
   }
 
@@ -133,17 +165,39 @@ export class SqliteStore {
       embedder && chunks.length > 0
         ? (await embedder.embed(chunks.map((chunk) => chunk.code))).map(encodeVector)
         : chunks.map(() => null)
-    const structural = buildStructuralIndex(chunks)
+    // Legacy full rebuild — no warm-tracking (empty manifest, model 'none'). syncIndex() is the warm path.
+    this.writeAll(chunks, blobs, [], 'none')
+  }
 
+  /**
+   * The full-rebuild transaction shared by index() + syncIndex(): clear everything and repopulate from
+   * (chunks, blobs) with the given manifest + model id, atomically. `blobs[i]` is chunk[i]'s stored
+   * vector (reused for unchanged files, freshly embedded for changed) or null. Writing the manifest in
+   * the SAME transaction is the partial-index guard: a process killed mid-rebuild commits nothing, so no
+   * file is falsely marked warm.
+   */
+  private writeAll(
+    chunks: readonly Chunk[],
+    blobs: readonly (Buffer | null)[],
+    manifest: readonly ManifestEntry[],
+    modelId: string,
+  ): void {
+    const structural = buildStructuralIndex(chunks)
     const insertChunk = this.db.prepare(
       `INSERT INTO chunks (id, path, lang, symbol, kind, start_line, end_line, code, structural_refs, embedding)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     const insertFts = this.db.prepare(FTS_INSERT_SQL)
     const insertEdge = this.db.prepare('INSERT INTO structural_edges (src, dst) VALUES (?, ?)')
+    const insertManifest = this.db.prepare(
+      'INSERT INTO file_manifest (path, mtime_ms, size, chunk_ids) VALUES (?, ?, ?, ?)',
+    )
+    const setMeta = this.db.prepare('INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)')
 
     const rebuild = this.db.transaction(() => {
-      this.db.exec('DELETE FROM chunks; DELETE FROM chunks_fts; DELETE FROM structural_edges;')
+      this.db.exec(
+        'DELETE FROM chunks; DELETE FROM chunks_fts; DELETE FROM structural_edges; DELETE FROM file_manifest;',
+      )
       chunks.forEach((chunk, i) => {
         insertChunk.run(
           chunk.id,
@@ -163,6 +217,10 @@ export class SqliteStore {
       for (const [src, neighbours] of structural.neighbours) {
         for (const dst of neighbours) insertEdge.run(src, dst)
       }
+      for (const entry of manifest) {
+        insertManifest.run(entry.path, entry.mtimeMs, entry.size, JSON.stringify(entry.chunkIds))
+      }
+      setMeta.run('model_id', modelId)
     })
     rebuild()
   }
@@ -253,6 +311,133 @@ export class SqliteStore {
   /** Release the SQLite handle. */
   close(): void {
     this.db.close()
+  }
+
+  /** The persisted per-file manifest (path → its stat + chunk ids at index time). Empty when cold. */
+  readManifest(): ManifestEntry[] {
+    const rows = this.db
+      .prepare('SELECT path, mtime_ms, size, chunk_ids FROM file_manifest')
+      .all() as { path: string; mtime_ms: number; size: number; chunk_ids: string }[]
+    return rows.map((row) => ({
+      path: row.path,
+      mtimeMs: row.mtime_ms,
+      size: row.size,
+      chunkIds: JSON.parse(row.chunk_ids) as string[],
+    }))
+  }
+
+  /** The model id the persisted vectors were produced with; null if never indexed (cold). */
+  readModelId(): string | null {
+    const row = this.db.prepare("SELECT value FROM index_meta WHERE key = 'model_id'").get() as
+      | { value: string }
+      | undefined
+    return row?.value ?? null
+  }
+
+  /** Read the stored chunks + their embedding blobs for the given paths (the reuse path — no embed). */
+  private readChunksWithBlobs(paths: readonly string[]): {
+    chunks: Chunk[]
+    blobs: (Buffer | null)[]
+  } {
+    if (paths.length === 0) return { chunks: [], blobs: [] }
+    const placeholders = paths.map(() => '?').join(',')
+    const rows = this.db
+      .prepare(
+        `SELECT id, path, lang, symbol, kind, start_line, end_line, code, structural_refs, embedding
+         FROM chunks WHERE path IN (${placeholders}) ORDER BY rowid`,
+      )
+      .all(...paths) as (ChunkRow & { embedding: Buffer | null })[]
+    const chunks: Chunk[] = []
+    const blobs: (Buffer | null)[] = []
+    for (const row of rows) {
+      chunks.push({
+        id: row.id,
+        path: row.path,
+        lang: row.lang,
+        symbol: row.symbol,
+        kind: row.kind as Chunk['kind'],
+        span: { startLine: row.start_line, endLine: row.end_line },
+        code: row.code,
+        structuralRefs: JSON.parse(row.structural_refs) as Chunk['structuralRefs'],
+      })
+      blobs.push(row.embedding ?? null)
+    }
+    return { chunks, blobs }
+  }
+
+  /**
+   * Warm restart (FTR-57): (re)build the index from the CURRENT file set, re-chunking + re-embedding
+   * ONLY changed/new files and REUSING the stored chunks+vectors of unchanged ones — the stat-only skip
+   * (mtime+size). Deleted files drop out; a model-id change (or an empty manifest) forces a cold rebuild.
+   *
+   * `chunkChanged` is called with ONLY the changed paths (never for unchanged files — no re-read/parse);
+   * the embedder embeds ONLY those chunks. A fully-warm start returns immediately with 0 embedded chunks.
+   * The structural graph is rebuilt from the full reused+new chunk set (edges are global; no embed).
+   */
+  async syncIndex(
+    current: readonly FileStat[],
+    chunkChanged: ChunkChanged,
+    options: SyncOptions = {},
+  ): Promise<SyncReport> {
+    const modelId = options.modelId ?? 'none'
+    const embedder = options.embedder
+    const manifest = this.readManifest()
+    const storedModel = this.readModelId()
+    // cold = never indexed OR the embedder changed (persisted vectors are model-specific).
+    const cold = manifest.length === 0 || (storedModel !== null && storedModel !== modelId)
+
+    const diff = cold
+      ? { unchanged: [] as ManifestEntry[], changed: [...current], deleted: [] as ManifestEntry[] }
+      : diffManifest(current, manifest)
+
+    // TRUE warm skip: nothing changed or deleted ⇒ ZERO work, ZERO embed, no rewrite.
+    if (!cold && diff.changed.length === 0 && diff.deleted.length === 0) {
+      return {
+        cold: false,
+        reusedFiles: diff.unchanged.length,
+        reindexedFiles: 0,
+        deletedFiles: 0,
+        embeddedChunks: 0,
+      }
+    }
+
+    const changedPaths = diff.changed.map((file) => file.path)
+    const newChunks = changedPaths.length > 0 ? await chunkChanged(changedPaths) : []
+    // reuse the unchanged files' chunks+vectors straight from disk (no re-chunk, no re-embed)…
+    const reused = this.readChunksWithBlobs(diff.unchanged.map((entry) => entry.path))
+    // …and embed ONLY the changed files' chunks.
+    const newBlobs: (Buffer | null)[] =
+      embedder && newChunks.length > 0
+        ? (await embedder.embed(newChunks.map((chunk) => chunk.code))).map(encodeVector)
+        : newChunks.map(() => null)
+
+    // manifest after this sync: unchanged kept + one entry per changed file (new stat + its new chunk ids).
+    const chunksByPath = new Map<string, string[]>()
+    for (const chunk of newChunks) {
+      const list = chunksByPath.get(chunk.path)
+      if (list === undefined) chunksByPath.set(chunk.path, [chunk.id])
+      else list.push(chunk.id)
+    }
+    const changedEntries: ManifestEntry[] = diff.changed.map((file) => ({
+      ...file,
+      chunkIds: chunksByPath.get(file.path) ?? [],
+    }))
+    const nextManifest = [...diff.unchanged, ...changedEntries]
+
+    this.writeAll(
+      [...reused.chunks, ...newChunks],
+      [...reused.blobs, ...newBlobs],
+      nextManifest,
+      modelId,
+    )
+
+    return {
+      cold,
+      reusedFiles: diff.unchanged.length,
+      reindexedFiles: diff.changed.length,
+      deletedFiles: diff.deleted.length,
+      embeddedChunks: newChunks.length,
+    }
   }
 
   private chunkList(): Chunk[] {
