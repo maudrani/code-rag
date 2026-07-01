@@ -6,8 +6,13 @@ import { JsonlLedgerSink, resolveLedgerPath, withLedger } from './ledger.js'
 
 /**
  * resolveEngineConfig — config precedence: explicit arg > env (CORPUS_PATH,
- * ANTHROPIC_API_KEY) > engine default. Undefined keys are OMITTED (never set to
- * `undefined`) so they don't trip exactOptionalPropertyTypes at createEngine.
+ * ANTHROPIC_API_KEY, CODE_RAG_INDEX) > engine default. Undefined keys are OMITTED
+ * (never set to `undefined`) so they don't trip exactOptionalPropertyTypes at createEngine.
+ *
+ * This is the ONE loader every consumer funnels through (buildEngine → createEngine), so
+ * adding a env-fed key here wires it for the HTTP server, the CLI, AND the MCP serve at
+ * once — no per-call-site drift. `CODE_RAG_INDEX` is the warm-restart index path (FTR-57):
+ * a second run re-embeds only changed files (minutes → seconds); unset = today's cold index.
  */
 export function resolveEngineConfig(
   config: EngineConfig = {},
@@ -15,9 +20,11 @@ export function resolveEngineConfig(
 ): EngineConfig {
   const corpusPath = config.corpusPath ?? env.CORPUS_PATH
   const apiKey = config.apiKey ?? env.ANTHROPIC_API_KEY
+  const indexPath = config.indexPath ?? env.CODE_RAG_INDEX
   const resolved: EngineConfig = {}
   if (corpusPath !== undefined) resolved.corpusPath = corpusPath
   if (apiKey !== undefined) resolved.apiKey = apiKey
+  if (indexPath !== undefined) resolved.indexPath = indexPath
   return resolved
 }
 

@@ -51,6 +51,12 @@ describe('docker-compose.yml — server (+ web) with the env contract (TKT-430 /
     expect(compose).toContain('web/dist')
     expect(compose).toMatch(/ledger:/) // a named volume for the cross-consumer ledger
   })
+
+  it('persists the warm-restart index (FTR-57) via CODE_RAG_INDEX + a named volume', () => {
+    // the demo-snappy leg: a second run re-embeds only changed files; the index must survive restarts.
+    expect(compose).toContain('CODE_RAG_INDEX')
+    expect(compose).toMatch(/index:/) // a named volume for the warm-restart index (like ledger:)
+  })
 })
 
 describe('.dockerignore keeps the context small', () => {

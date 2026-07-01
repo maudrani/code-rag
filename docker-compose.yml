@@ -3,6 +3,8 @@
 # Env: set ANTHROPIC_API_KEY (the only key clone-and-run needs — embeddings are local; search /
 # --dry need none). CORPUS_PATH picks the host dir to index (mounted read-only). The shared ledger
 # survives restarts and is what the web dashboard tails (the cross-consumer funnel, FTR-46).
+# CODE_RAG_INDEX persists the embedding index (FTR-57 warm-restart) so the 2nd run is snappy
+# (seconds, not minutes — it re-embeds only files whose mtime/size changed).
 
 services:
   server:
@@ -16,9 +18,11 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - CORPUS_PATH=/corpus
       - CODE_RAG_LEDGER=/data/ledger.jsonl
+      - CODE_RAG_INDEX=/index/code-rag.db
     volumes:
       - ${CORPUS_PATH:-./}:/corpus:ro   # the repo to index (read-only)
       - ledger:/data                     # the shared cross-consumer ledger (the web tails it)
+      - index:/index                     # the warm-restart index (FTR-57): 2nd run re-embeds only changed files
     restart: unless-stopped
 
   # The standalone web UI (frontend row) — served static by nginx from the Vite build.
@@ -36,3 +40,4 @@ services:
 
 volumes:
   ledger:
+  index:

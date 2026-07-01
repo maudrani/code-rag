@@ -7,21 +7,31 @@ import { makeRefuseProjection } from '../fixtures/projections.js'
 describe('resolveEngineConfig — TKT-409', () => {
   it('explicit arg takes precedence over env', () => {
     const cfg = resolveEngineConfig(
-      { corpusPath: '/arg', apiKey: 'arg-key' },
-      { CORPUS_PATH: '/env', ANTHROPIC_API_KEY: 'env-key' },
+      { corpusPath: '/arg', apiKey: 'arg-key', indexPath: '/arg-idx' },
+      { CORPUS_PATH: '/env', ANTHROPIC_API_KEY: 'env-key', CODE_RAG_INDEX: '/env-idx' },
     )
-    expect(cfg).toEqual({ corpusPath: '/arg', apiKey: 'arg-key' })
+    expect(cfg).toEqual({ corpusPath: '/arg', apiKey: 'arg-key', indexPath: '/arg-idx' })
   })
 
   it('falls back to env when the arg is absent', () => {
-    const cfg = resolveEngineConfig({}, { CORPUS_PATH: '/env', ANTHROPIC_API_KEY: 'env-key' })
-    expect(cfg).toEqual({ corpusPath: '/env', apiKey: 'env-key' })
+    const cfg = resolveEngineConfig(
+      {},
+      { CORPUS_PATH: '/env', ANTHROPIC_API_KEY: 'env-key', CODE_RAG_INDEX: '/env-idx' },
+    )
+    expect(cfg).toEqual({ corpusPath: '/env', apiKey: 'env-key', indexPath: '/env-idx' })
+  })
+
+  it('threads CODE_RAG_INDEX → indexPath alone (warm-restart opt-in, mirrors CORPUS_PATH)', () => {
+    expect(resolveEngineConfig({}, { CODE_RAG_INDEX: '/data/code-rag.db' })).toEqual({
+      indexPath: '/data/code-rag.db',
+    })
   })
 
   it('NEGATIVE: omits undefined keys when neither arg nor env is set (exactOptionalPropertyTypes)', () => {
     const cfg = resolveEngineConfig({}, {})
     expect('corpusPath' in cfg).toBe(false)
     expect('apiKey' in cfg).toBe(false)
+    expect('indexPath' in cfg).toBe(false)
     expect(cfg).toEqual({})
   })
 })
