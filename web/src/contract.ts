@@ -44,24 +44,15 @@ export type {
 } from '../../src/contracts/wire'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PENDING master ratification (TKT-517 escalation) — the corpus/symbols read-surface.
-//
-// GET /symbols -> SymbolsPayload powers the assisted-search UI (CorpusTree + SymbolCombobox).
-// The SSOT does NOT hold these types yet (verified: no SymbolEntry in src/contracts). Rather than
-// edit the master-owned contracts (RULE-019), we mirror the ESCALATED shape here, clearly marked.
-// These are `interface`/`type` declarations — also fully erased at compile time, so web ⊥ Node holds
-// (no Node code is bundled). THE 1-LINE SWAP: when master lands SymbolEntry/SymbolsPayload in
-// src/contracts, delete this block and add a single `export type { SymbolEntry, SymbolsPayload }
-// from '../../src/contracts/…'` line — the whole app imports from `../contract`, so nothing else
-// changes. Keep the shapes byte-identical to the escalation so the swap is mechanical.
-export interface SymbolEntry {
-  path: string
-  symbol: string
-  /** 'function' | 'class' | 'interface' | 'module' | 'type' | … (mirrors Chunk.kind). */
-  kind: string
-  lang: string
-  span: { startLine: number; endLine: number }
-}
+// /symbols read-surface (TKT-517 RATIFIED). `SymbolEntry` now lives in the master SSOT
+// (src/contracts/chunk — a Chunk projected to its identity), so we bridge it type-only like the
+// other contracts (zero-drift). `SymbolsPayload` is surface's consume WIRE shape
+// (src/consume/telemetry.ts getSymbolsPayload); web ⊥ Node bars bridging from src/consume, so it
+// stays a trivial LOCAL envelope over the SSOT SymbolEntry — its content can't drift because
+// SymbolEntry itself is sourced from the contract.
+import type { SymbolEntry } from '../../src/contracts/chunk'
+
+export type { SymbolEntry }
 
 export interface SymbolsPayload {
   symbols: SymbolEntry[]

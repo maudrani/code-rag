@@ -8,7 +8,7 @@ import type { SymbolEntry } from '../src/contract'
 const sym = (path: string, symbol: string, startLine: number): SymbolEntry => ({
   path,
   symbol,
-  kind: 'interface',
+  kind: 'other',
   lang: 'ts',
   span: { startLine, endLine: startLine + 4 },
 })
