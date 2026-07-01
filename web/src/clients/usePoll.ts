@@ -7,8 +7,8 @@ export interface PollState<T> {
   error: Error | null
   /** true only on first paint (no data AND no error yet) — never re-raised on a background poll. */
   loading: boolean
-  /** force an immediate re-fetch (also used by an error-state Retry). */
-  refetch: () => void
+  /** force an immediate re-fetch (also used by an error-state Retry); awaitable for UI feedback. */
+  refetch: () => Promise<void>
 }
 
 /**

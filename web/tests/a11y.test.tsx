@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ChatView } from '../src/components/ChatView'
+import { LiveListenerTab } from '../src/components/LiveListenerTab'
 import { ManualSearchTab } from '../src/components/ManualSearchTab'
 import { ObservabilityTab } from '../src/components/observability/ObservabilityTab'
 import {
@@ -109,5 +110,14 @@ describe('accessibility — assisted search', () => {
     // the corpus browser is a real ARIA tree once revealed
     await user.click(screen.getByRole('button', { name: /browse files/i }))
     expect(screen.getByRole('tree', { name: /corpus files/i })).toBeInTheDocument()
+  })
+})
+
+describe('accessibility — live listener', () => {
+  it('exposes the live feed as a labelled region with a status live-region', () => {
+    // jsdom has no EventSource + no injected factory -> the hook resolves to a graceful status region
+    render(<LiveListenerTab />)
+    expect(screen.getByRole('region', { name: /live listener/i })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
   })
 })

@@ -1,6 +1,7 @@
 import { Boxes, Database, FileStack, Search, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { ChartConfig } from '@/components/ui/chart'
+import { cn } from '@/lib/utils'
 import type {
   AnswerTelemetry,
   ChunkTelemetry,
@@ -23,7 +24,18 @@ import { EmptyState, Metric, StatCard } from './StatCard'
 
 const ICON = 'size-4'
 
-/** L1 · Ingest — files walked/indexed/skipped, chunk yield, wall time, per-language spread. */
+/** Share of discovered files that produced ≥1 chunk (the ingest coverage signal). */
+const coveragePct = (d: IngestTelemetry): number =>
+  d.filesWalked > 0 ? Math.round((d.filesIndexed / d.filesWalked) * 100) : 0
+
+/** Freshness colour for the last index build: fresh (<1m) / aging (<1h) / stale. */
+const freshnessTone = (staleMs: number): string =>
+  staleMs < 60_000 ? 'bg-emerald-500' : staleMs < 3_600_000 ? 'bg-amber-500' : 'bg-rose-500'
+
+/**
+ * L1 · Ingest — signature viz is the COVERAGE bar (indexed / walked): what fraction of the discovered
+ * files actually produced chunks. Then the raw counts + wall time.
+ */
 export function IngestCard({ data }: { data: IngestTelemetry | null }) {
   return (
     <StatCard
@@ -33,15 +45,29 @@ export function IngestCard({ data }: { data: IngestTelemetry | null }) {
       badge={data ? <Badge variant="secondary">{formatInt(data.filesIndexed)} files</Badge> : null}
     >
       {data ? (
-        <div className="flex flex-col">
-          <Metric
-            label="Files indexed"
-            value={`${formatInt(data.filesIndexed)} / ${formatInt(data.filesWalked)}`}
-          />
-          <Metric label="Skipped" value={formatInt(data.skipped)} />
-          <Metric label="Errors" value={formatInt(data.errors.length)} />
-          <Metric label="Chunks" value={formatInt(data.chunks)} />
-          <Metric label="Duration" value={formatMs(data.durationMs)} />
+        <div className="flex flex-col gap-3">
+          <div>
+            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Index coverage</span>
+              <span className="font-mono tabular-nums">{coveragePct(data)}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-[var(--chart-1)]"
+                style={{ width: `${coveragePct(data)}%` }}
+              />
+            </div>
+          </div>
+          <div className="flex flex-col">
+            <Metric
+              label="Files indexed"
+              value={`${formatInt(data.filesIndexed)} / ${formatInt(data.filesWalked)}`}
+            />
+            <Metric label="Skipped" value={formatInt(data.skipped)} />
+            <Metric label="Errors" value={formatInt(data.errors.length)} />
+            <Metric label="Chunks" value={formatInt(data.chunks)} />
+            <Metric label="Duration" value={formatMs(data.durationMs)} />
+          </div>
         </div>
       ) : (
         <EmptyState>Not ingested yet.</EmptyState>
@@ -94,7 +120,10 @@ export function ChunkCard({ data }: { data: ChunkTelemetry | null }) {
   )
 }
 
-/** L3 · Index — document count, on-disk/in-memory size, freshness of the last build. */
+/**
+ * L3 · Index — signature is the FRESHNESS lead: a colour-coded "last build" chip (fresh/aging/stale)
+ * — a warm-restart-served index at :memory: reads differently from a cold one. Then docs + footprint.
+ */
 export function IndexCard({ data }: { data: IndexTelemetry | null }) {
   return (
     <StatCard
@@ -104,10 +133,20 @@ export function IndexCard({ data }: { data: IndexTelemetry | null }) {
       badge={data ? <Badge variant="secondary">{formatInt(data.docs)} docs</Badge> : null}
     >
       {data ? (
-        <div className="flex flex-col">
-          <Metric label="Documents" value={formatInt(data.docs)} />
-          <Metric label="Size" value={formatBytes(data.sizeBytes)} />
-          <Metric label="Built" value={formatStale(data.staleMs)} />
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2">
+            <span
+              className={cn('size-2 shrink-0 rounded-full', freshnessTone(data.staleMs))}
+              aria-hidden="true"
+            />
+            <span className="text-sm">
+              Last build <span className="font-medium">{formatStale(data.staleMs)}</span>
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <Metric label="Documents" value={formatInt(data.docs)} />
+            <Metric label="Size" value={formatBytes(data.sizeBytes)} />
+          </div>
         </div>
       ) : (
         <EmptyState>Index not built yet.</EmptyState>
@@ -187,12 +226,18 @@ export function AnswerCard({ data }: { data: AnswerTelemetry | null }) {
       }
     >
       {data ? (
-        <div className="flex flex-col">
-          <Metric label="Band" value={data.band} />
-          <Metric label="Tier" value={data.tier} />
-          <Metric label="Model" value={data.model} />
-          <Metric label="Tokens" value={formatInt(data.tokens)} />
-          <Metric label="Est. cost" value={formatCost(data.estCost)} />
+        <div className="flex flex-col gap-3">
+          <div className="rounded-md border border-border/60 bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Estimated cost · this query</p>
+            <p className="font-mono text-2xl leading-tight tabular-nums">
+              {formatCost(data.estCost)}
+            </p>
+          </div>
+          <div className="flex flex-col">
+            <Metric label="Band" value={data.band} />
+            <Metric label="Model" value={data.model} />
+            <Metric label="Tokens" value={formatInt(data.tokens)} />
+          </div>
         </div>
       ) : (
         <EmptyState>No answer yet — the last query refused or none has run.</EmptyState>

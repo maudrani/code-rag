@@ -1,8 +1,9 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react'
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import { fetchHealth, fetchStats } from '../../clients/telemetryClient'
 import { usePoll } from '../../clients/usePoll'
 import { HealthCard } from './HealthCard'
@@ -26,9 +27,14 @@ export function ObservabilityTab({ baseUrl = '' }: { baseUrl?: string }) {
   const stats = usePoll(statsFetcher, POLL_MS)
   const health = usePoll(healthFetcher, POLL_MS)
 
-  const refreshAll = useCallback(() => {
-    stats.refetch()
-    health.refetch()
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshAll = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await Promise.all([stats.refetch(), health.refetch()])
+    } finally {
+      setRefreshing(false)
+    }
   }, [stats, health])
 
   return (
@@ -40,9 +46,18 @@ export function ObservabilityTab({ baseUrl = '' }: { baseUrl?: string }) {
             Live L0→L5 telemetry over the wire · the deterministic read-surface
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={refreshAll}>
-          <RefreshCw className="size-4" aria-hidden="true" />
-          Refresh
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            void refreshAll()
+          }}
+          disabled={refreshing}
+          aria-busy={refreshing}
+        >
+          <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} aria-hidden="true" />
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </Button>
       </div>
 

@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useTraceSocket } from './clients/useTraceSocket'
 import { ChatView } from './components/ChatView'
+import { LiveListenerTab } from './components/LiveListenerTab'
 import { ManualSearchTab } from './components/ManualSearchTab'
 import { MockDataBanner } from './components/MockDataBanner'
 import { ObservabilityTab } from './components/observability/ObservabilityTab'
 import { TracePanel } from './components/TracePanel'
 import { API_BASE, WS_BASE } from './lib/config'
 
-type Tab = 'chat' | 'search' | 'observability'
+type Tab = 'chat' | 'search' | 'observability' | 'live'
 
 /**
  * App shell — the whole UI assembled against the wire (ADR-008). Tabs between the streaming
@@ -52,6 +53,13 @@ export function App() {
           >
             Observability
           </button>
+          <button
+            type="button"
+            className={`tab${tab === 'live' ? ' tab--active' : ''}`}
+            onClick={() => setTab('live')}
+          >
+            Live
+          </button>
         </nav>
       </header>
       <div className="layout">
@@ -60,8 +68,10 @@ export function App() {
             <ChatView options={{ baseUrl: API_BASE }} onActiveQuery={setQueryId} />
           ) : tab === 'search' ? (
             <ManualSearchTab baseUrl={API_BASE} />
-          ) : (
+          ) : tab === 'observability' ? (
             <ObservabilityTab baseUrl={API_BASE} />
+          ) : (
+            <LiveListenerTab baseUrl={API_BASE} />
           )}
         </div>
         {/* The trace rail is bound to the chat's active queryId — chat-only (search + observability

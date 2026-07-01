@@ -579,3 +579,24 @@ main {
   white-space: nowrap;
   border: 0;
 }
+
+/* Live-listener feed: a newly-arrived row plays this once on mount (React keys by queryId, so only
+   genuinely new entries animate). Respects reduced-motion. */
+@keyframes ledger-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ledger-entry {
+  animation: ledger-enter 350ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ledger-entry {
+    animation: none;
+  }
+}

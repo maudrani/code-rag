@@ -150,7 +150,7 @@ export function SymbolCombobox({ symbols, onSelect, disabled = false }: SymbolCo
                   <span className="truncate font-mono">{entry.symbol}</span>
                   <span className="truncate text-xs text-muted-foreground">{entry.path}</span>
                 </span>
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-secondary-foreground">
                   {entry.kind}
                 </span>
               </div>

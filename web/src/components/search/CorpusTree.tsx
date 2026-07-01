@@ -109,7 +109,7 @@ function TreeNodeItem({
                     :{entry.span.startLine}
                   </span>
                 </span>
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-secondary-foreground">
                   {entry.kind}
                 </span>
               </button>

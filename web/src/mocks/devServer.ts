@@ -13,6 +13,7 @@ import {
   ANSWER_MARKDOWN,
   answerProjection,
   healthFixture,
+  makeLedgerEntry,
   refuseProjection,
   statsFixture,
   symbolsFixture,
@@ -116,6 +117,29 @@ export function mockWirePlugin(): Plugin {
         }
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ symbols: symbolsFixture }))
+      })
+
+      // GET /ledger/stream — the cross-consumer SSE feed the Live tab tails (surface: src/http/routes/
+      // ledger.ts). Emits a small replay burst then a periodic `entry` (rotating consumers) so
+      // `npm run dev` shows a live, cross-consumer feed. Timer is cleared when the client disconnects.
+      server.middlewares.use('/ledger/stream', (req, res, next) => {
+        if (req.method !== 'GET') {
+          next()
+          return
+        }
+        res.writeHead(200, SSE_HEADERS)
+        let i = 0
+        const send = () => {
+          res.write(`event: entry\ndata: ${JSON.stringify(makeLedgerEntry(i++))}\n\n`)
+        }
+        // Replay-on-connect: a burst so the Live tab opens ALREADY populated (stands in for surface's
+        // last-50 replay). Then a live tail — surface polls the shared file every 500ms; the mock
+        // fabricates entries on a readable cadence so the demo trickles rather than firehoses.
+        for (let k = 0; k < 8; k++) {
+          send()
+        }
+        const timer = setInterval(send, 1200)
+        req.on('close', () => clearInterval(timer))
       })
 
       // WS /ws/trace — stream the current query's Events (M1 single-consumer, A4).

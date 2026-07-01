@@ -56,8 +56,8 @@ describe('ObservabilityTab', () => {
 
     await user.click(screen.getByRole('tab', { name: /answer/i }))
     const answer = await screen.findByRole('region', { name: /answer/i })
-    expect(within(answer).getByText('claude-opus-4-8')).toBeInTheDocument()
-    expect(within(answer).getByText('$0.00026')).toBeInTheDocument()
+    expect(within(answer).getByText('claude-haiku-4-5')).toBeInTheDocument()
+    expect(within(answer).getByText('$0.00007')).toBeInTheDocument()
   })
 
   it('renders the health status and per-check pass/fail from /health (always visible)', async () => {
@@ -133,5 +133,34 @@ describe('ObservabilityTab', () => {
     )
     render(<ObservabilityTab />)
     expect(screen.getByRole('status', { name: /loading telemetry/i })).toBeInTheDocument()
+  })
+
+  it('the Refresh control shows in-flight feedback (spins + disabled) while re-fetching', async () => {
+    // the two mount fetches resolve; every later fetch (the refetch) hangs so we can observe the
+    // in-flight state deterministically.
+    let calls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: unknown) => {
+        calls += 1
+        if (calls <= 2) {
+          const body = String(url).includes('/health') ? healthFixture : statsFixture
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => body,
+          } as unknown as Response)
+        }
+        return new Promise<Response>(() => {}) // refetch never resolves -> stays "Refreshing…"
+      }),
+    )
+    const user = userEvent.setup()
+    render(<ObservabilityTab />)
+
+    await screen.findByRole('region', { name: /health/i }) // initial load settled
+    await user.click(screen.getByRole('button', { name: /refresh/i }))
+
+    const busy = await screen.findByRole('button', { name: /refreshing/i })
+    expect(busy).toBeDisabled()
   })
 })

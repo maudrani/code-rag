@@ -133,6 +133,14 @@ const FRONTEND_GATES: Gate[] = [
     layer: 'frontend',
     gateTest: 'web/tests/symbol-combobox.test.tsx::prefix filter narrows the option list',
   },
+  {
+    id: 'frontend.live-listener',
+    claim:
+      'the Live tab renders a cross-consumer feed from GET /ledger/stream, tagging each arriving query by its consumer (the one-surface/N-consumers thesis, live)',
+    layer: 'frontend',
+    gateTest:
+      'web/tests/live-listener-tab.test.tsx::renders arriving entries as a live feed tagged by consumer',
+  },
 ]
 
 // gateTest files are repo-root-relative (e.g. 'web/tests/x'); web's vitest cwd is web/, so strip

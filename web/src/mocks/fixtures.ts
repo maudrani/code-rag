@@ -6,9 +6,11 @@
  */
 import type {
   Citation,
+  Consumer,
   EngineTelemetry,
   Event,
   HealthReport,
+  QueryLogEntry,
   RankedChunk,
   SymbolEntry,
   WireProjection,
@@ -188,10 +190,11 @@ export const statsFixture: EngineTelemetry = {
     },
     answer: {
       band: 'answer',
-      tier: 'strong',
-      model: 'claude-opus-4-8',
+      // the cheap tier IS live (answer-specialist FTR-32) — a coherent L5 snapshot: haiku, low cost.
+      tier: 'cheap',
+      model: 'claude-haiku-4-5',
       tokens: 128,
-      estCost: 0.00026,
+      estCost: 0.00007,
     },
   },
 }
@@ -249,3 +252,40 @@ export const symbolsFixture: SymbolEntry[] = [
   sym('src/cli/run.ts', 'run', 'function', 24, 118),
   sym('src/mcp/server.ts', 'createMcpServer', 'function', 20, 84),
 ]
+
+/** The five consumers of the one read-surface — cycled by the mock ledger so the Live feed shows
+ * queries arriving from EVERY transport (the cross-consumer thesis made visible). */
+const LEDGER_CONSUMERS: Consumer[] = ['cli', 'mcp', 'http', 'web', 'package']
+const LEDGER_QUERIES = [
+  'where is the score gate?',
+  'how does dense retrieval embed a query?',
+  'what does the membrane orchestrate?',
+  'list the http routes',
+  'how are oversized symbols glued into a module chunk?',
+]
+
+/**
+ * makeLedgerEntry — a deterministic-by-index QueryLogEntry for the mock GET /ledger/stream. Cycles the
+ * consumer + query, varies band/latency/scores by index, stamps a fresh ts + unique queryId so the
+ * dev Live feed looks alive. Node-side (dev server) only; `ts` uses Date.now() at call time.
+ */
+export function makeLedgerEntry(i: number): QueryLogEntry {
+  const consumer = LEDGER_CONSUMERS[i % LEDGER_CONSUMERS.length]
+  const query = LEDGER_QUERIES[i % LEDGER_QUERIES.length]
+  const band: QueryLogEntry['band'] = i % 4 === 3 ? 'refuse' : 'answer'
+  const base = 0.012 + (i % 5) * 0.004
+  return {
+    ts: Date.now(),
+    queryId: `q-live-${i}`,
+    consumer,
+    query,
+    resultCount: band === 'answer' ? 5 : 0,
+    scoresByLeg: {
+      bm25: Number((base * 0.6).toFixed(4)),
+      dense: Number((base * 0.4).toFixed(4)),
+      structural: Number((base * 0.2).toFixed(4)),
+    },
+    band,
+    latencyMs: 24 + (i % 7) * 6,
+  }
+}
