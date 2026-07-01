@@ -33,7 +33,7 @@ export interface EngineConfig {
  * `query` runs the deterministic membrane (L0 -> retrieve -> project) and returns
  * the Projection incl. the gate decision. `answer` streams L5 (token + usage)
  * over a projection (only when `decision.band === 'answer'`). They are split so
- * `cli-dry` / `mcp` can call `query` alone (no LLM, no cost).
+ * a dry CLI call / `mcp` can call `query` alone (no LLM, no cost).
  */
 export interface Engine {
   ingest(repoPath: string): Promise<IngestReport>

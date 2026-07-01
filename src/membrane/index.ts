@@ -52,11 +52,6 @@ const TOP_K = 10
 /** Events buffered per queryId before the oldest is evicted (the replay backlog cap). */
 const REPLAY_CAP = 50
 
-/** Map the reading consumer's intent to its ledger Consumer ('cli-dry' -> 'cli', else as-is). */
-function mapConsumer(intent: ConsumerIntent): Consumer {
-  return intent === 'cli-dry' ? 'cli' : intent
-}
-
 export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & Observable => {
   const bus = createBus()
   const corpusPath = config.corpusPath ?? DEFAULT_CORPUS
@@ -210,7 +205,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     ledger.push({
       ts: Date.now(),
       queryId,
-      consumer: mapConsumer(intent),
+      consumer: intent,
       query: question,
       resultCount: results.length,
       scoresByLeg,

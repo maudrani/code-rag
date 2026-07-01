@@ -79,25 +79,24 @@ describe('replay() — the late-subscriber race fix (ring buffer)', () => {
   })
 })
 
-describe('ledger — consumer tagging (ConsumerIntent -> Consumer)', () => {
-  it('maps cli-dry -> cli and passes http/mcp/package through unchanged', async () => {
+describe('ledger — consumer tagging (ConsumerIntent === Consumer)', () => {
+  it('tags each query with its transport identity, unchanged', async () => {
     const engine = await freshEngine()
-    await engine.query('getUserById', [], 'cli-dry')
+    await engine.query('getUserById', [], 'cli')
     await engine.query('parseQuery', [], 'http')
     await engine.query('getUserById', [], 'mcp')
     await engine.query('parseQuery', [], 'package')
     const consumers = engine.queryLog().map((e) => e.consumer)
-    expect(consumers).toContain('cli') // cli-dry mapped
+    expect(consumers).toContain('cli')
     expect(consumers).toContain('http')
     expect(consumers).toContain('mcp')
     expect(consumers).toContain('package')
   })
 
-  it('FAILURE TWIN: never tags the raw cli-dry intent as the consumer', async () => {
+  it('FAILURE TWIN: the ledger consumer is EXACTLY the intent — never invented or dropped', async () => {
     const engine = await freshEngine()
-    await engine.query('getUserById', [], 'cli-dry')
-    const consumers = engine.queryLog().map((e) => e.consumer as string)
-    expect(consumers).not.toContain('cli-dry')
+    await engine.query('getUserById', [], 'cli')
+    const consumers = engine.queryLog().map((e) => e.consumer)
     expect(consumers).toEqual(['cli'])
   })
 })

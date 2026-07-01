@@ -1,4 +1,5 @@
 import type { RankedChunk } from './retrieval.js'
+import type { Consumer } from './telemetry.js'
 
 /** one conversational turn (multi-turn chat). */
 export interface Turn {
@@ -41,13 +42,17 @@ export type ScoreGate = (
   query: { question: string; resolvedQuery: string },
 ) => GateDecision
 
-/** which consumer is reading — each reads its slice of the Projection. */
-export type ConsumerIntent = 'http' | 'cli-dry' | 'mcp' | 'package'
+/**
+ * which consumer is reading — the transport identity, aligned 1:1 with the ledger {@link Consumer}
+ * (TKT-424). Dry-vs-answer is a MODE (see `ask`), orthogonal to the consumer, so there is no
+ * 'cli-dry' here: a dry CLI call is still consumer 'cli'.
+ */
+export type ConsumerIntent = Consumer
 
 /**
  * Projection — the SSOT every consumer reads (ADR-002). Master-owned: the
  * membrane projects it (it never recomputes). `context.assembled` is the mise
- * en place for L5; consumers that don't answer (cli-dry, mcp) ignore it, and
+ * en place for L5; consumers that don't answer (a dry CLI call, mcp) ignore it, and
  * the HTTP wire (ADR-008) sends a Projection MINUS `context`.
  */
 export interface Projection {

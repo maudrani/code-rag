@@ -1,5 +1,5 @@
 import type { Engine, EngineConfig } from '../contracts/engine.js'
-import type { ConsumerIntent, Projection, Turn } from '../contracts/projection.js'
+import type { Projection, Turn } from '../contracts/projection.js'
 import type { Consumer, Observable } from '../contracts/telemetry.js'
 import { createEngine } from '../package/index.js'
 
@@ -64,12 +64,9 @@ export async function ask(
   opts: AskOptions = {},
 ): Promise<AskResult> {
   const history = opts.history ?? []
-  // The consumer IS the ledger tag. BRIDGE: Consumer and ConsumerIntent share
-  // http/mcp/package but diverge on cli/cli-dry/web; the master is aligning
-  // ConsumerIntent = Consumer (dropping 'cli-dry'). At runtime the membrane passes every
-  // non-'cli-dry' value straight through, so the tag is already correct — the cast is the
-  // temporary type bridge, removed when the contract aligns (coordinated, RULE-019).
-  const projection = await engine.query(question, history, consumer as ConsumerIntent)
+  // The consumer IS the ledger tag; ConsumerIntent is now aligned 1:1 with Consumer (TKT-424),
+  // so the transport identity passes straight through, no cast.
+  const projection = await engine.query(question, history, consumer)
   opts.onProjection?.(projection) // header-first: projection known before any answer token
 
   if (opts.dry || projection.decision.band !== 'answer') {
