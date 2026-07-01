@@ -1,4 +1,5 @@
 import type { GateDecision, RankedChunk, ScoreGate } from '../contracts/index.js'
+import { COS_FLOOR } from '../contracts/index.js'
 
 /**
  * scoreGate — the deterministic 2-signal gate (ADR-005, seam 1; TKT-301).
@@ -30,6 +31,17 @@ import type { GateDecision, RankedChunk, ScoreGate } from '../contracts/index.js
  * jina-upgrade frontier — there, low overlap conservatively refuses.
  */
 export const GROUNDING_FLOOR = 0.25
+
+/**
+ * The SEMANTIC grounding floor: a raw dense cosine at/above {@link COS_FLOOR} ALSO grounds an answer,
+ * additively (by OR) with the lexical floor. Its ONE corpus-tuned value lives in the contract next to
+ * RankedChunk.cosine (the SSOT retrieval measured + the eval gates); re-exported here for the gate's
+ * callers/tests. NOT a calibrated confidence (peripheral-hub TKT-337).
+ */
+export { COS_FLOOR }
+
+/** How many top hits define the semantic signal — max raw cosine over the best few (FTR-55). */
+export const K_SEMANTIC = 3
 
 /** How many top results define "the assembled context" for the file/symbol proxy. */
 export const K_PROXY = 5
@@ -146,13 +158,35 @@ function lexicalGrounding(retrieval: RankedChunk[], resolvedQuery: string): numb
   return hits / terms.length
 }
 
+/**
+ * Semantic grounding: the MAX raw dense cosine over the top-K_SEMANTIC hits, IGNORING undefined
+ * cosines. A hit with `cosine === undefined` had no dense candidate (bm25/structural-only) — that
+ * is "no vector signal", NOT "zero relevance" — so it contributes nothing (a 0 would read as a
+ * confident non-match and could suppress a real signal, TKT-337). Returns 0 when NO top-N hit
+ * carries a cosine (no semantic signal available -> the lexical floor decides alone).
+ */
+function semanticGrounding(retrieval: RankedChunk[]): number {
+  const cosines = retrieval
+    .slice(0, K_SEMANTIC)
+    .map((r) => r.cosine)
+    .filter((c): c is number => c !== undefined)
+  return cosines.length === 0 ? 0 : Math.max(...cosines)
+}
+
 export const scoreGate: ScoreGate = (retrieval, query) => {
-  // ── signal 1: grounding -> band ──────────────────────────────────────────
-  // Lexical overlap: the share of the query's significant terms present in the
-  // retrieved code — an absolute "is this even about our code" signal (see the
-  // GROUNDING_FLOOR note for why the rank-based fused score was replaced).
+  // ── signal 1: grounding -> band (lexical OR semantic; FTR-55) ─────────────
+  // Two ADDITIVE grounding signals (design §4). Lexical overlap: the share of the query's
+  // significant terms present in the retrieved code. Semantic: the top hits' raw dense cosine —
+  // the ABSOLUTE relevance the rank-based `fused` score can't express (TKT-337). The OR is
+  // deliberate and MONOTONE: either signal strong -> answer, so it only ever turns a lexical
+  // refuse into an answer (fixing pure-NL false-refuse + a semantically off-topic refuse) and
+  // NEVER regresses a lexically-grounded query. `cosine` is undefined until retrieval/membrane
+  // thread it (FTR-55 Phase 1/3), so this OR is a safe no-op today (semanticScore 0 < COS_FLOOR).
+  // GateDecision.groundingScore stays the LEXICAL score (design §4); semanticScore is internal.
   const groundingScore = lexicalGrounding(retrieval, query.resolvedQuery)
-  const band: GateDecision['band'] = groundingScore < GROUNDING_FLOOR ? 'refuse' : 'answer'
+  const semanticScore = semanticGrounding(retrieval)
+  const grounded = groundingScore >= GROUNDING_FLOOR || semanticScore >= COS_FLOOR
+  const band: GateDecision['band'] = grounded ? 'answer' : 'refuse'
 
   // ── signal 2: complexity-proxy -> tier -> model ──────────────────────────
   // Distinct files over the top-K results approximate "files in the assembled

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COS_FLOOR,
   GROUNDING_FLOOR,
+  K_SEMANTIC,
   MODEL_CHEAP,
   MODEL_STRONG,
   MULTI_FILE_THRESHOLD,
@@ -86,6 +88,88 @@ describe('scoreGate — signal 1: grounding -> band (lexical overlap)', () => {
     const d = scoreGate([rc('a.ts', 'foo')], q('how does it'))
     expect(d.groundingScore).toBe(0)
     expect(d.band).toBe('refuse')
+  })
+})
+
+// ── signal 1b: semantic grounding (raw cosine floor, FTR-55) ────────────────────
+// A RankedChunk carrying an explicit raw dense cosine. `undefined` = a bm25/structural-only hit
+// (no dense candidate) — the TKT-337 "absent, not zero" case.
+const rcCos = (
+  cosine: number | undefined,
+  symbol = 'delayLoop',
+  code = 'function delayLoop() { let attempts = 0; wait() }',
+): RankedChunk => {
+  // Omit `cosine` entirely when undefined (exactOptionalPropertyTypes + fidelity to rrfFuse,
+  // which leaves the field ABSENT for a bm25/structural-only hit — not set to undefined).
+  const base = rc('x.ts', symbol, code)
+  return cosine === undefined ? base : { ...base, cosine }
+}
+
+// A pure-NL query whose significant terms (retry/backoff/strategy) do NOT appear in rcCos's
+// default code -> lexical overlap 0 (the lexical floor alone would refuse).
+const NL = q('retry backoff strategy')
+
+describe('scoreGate — signal 1b: semantic grounding (raw cosine floor, FTR-55)', () => {
+  it('COS_FLOOR is a RAW cosine in the probed window (above off-topic 0.065, below weakest-relevant 0.33)', () => {
+    expect(COS_FLOOR).toBeGreaterThan(0.065)
+    expect(COS_FLOOR).toBeLessThan(0.33)
+  })
+
+  // -- twin: pure-NL-strong is RESCUED by cosine (a lexical false-refuse), and it is load-bearing --
+  it('pure-NL-strong (lexical 0, cosine >= floor) -> ANSWER', () => {
+    const d = scoreGate([rcCos(0.42)], NL)
+    expect(d.groundingScore).toBe(0) // lexical alone would refuse
+    expect(d.band).toBe('answer') // cosine rescues it
+  })
+
+  it('NON-VACUITY: removing the cosine signal (undefined) flips the SAME query back to refuse', () => {
+    expect(scoreGate([rcCos(undefined)], NL).band).toBe('refuse')
+  })
+
+  it('a DEFINED but weak cosine (0.07, off-topic band) does NOT rescue -> refuse (the floor discriminates)', () => {
+    expect(scoreGate([rcCos(0.07)], NL).band).toBe('refuse')
+  })
+
+  // -- ignore undefined (absent != zero relevance) --
+  it('ignores undefined cosines but still grounds on the max of the DEFINED ones', () => {
+    // The top hit has no dense signal; a lower top-N hit is strongly relevant -> answer.
+    expect(scoreGate([rcCos(undefined, 'a'), rcCos(0.45, 'b')], NL).band).toBe('answer')
+  })
+
+  it('a single hit with cosine undefined contributes NO semantic signal -> refuse', () => {
+    expect(scoreGate([rcCos(undefined)], NL).band).toBe('refuse')
+  })
+
+  it('only the TOP-K_SEMANTIC hits count: a strong cosine on the (N+1)th hit is ignored -> refuse', () => {
+    const weakTop = Array.from({ length: K_SEMANTIC }, (_, i) => rcCos(0.1, `s${i}`))
+    expect(scoreGate([...weakTop, rcCos(0.5, 'deep')], NL).band).toBe('refuse')
+  })
+
+  // -- boundary (>=) --
+  it('cosine exactly AT the floor grounds', () => {
+    expect(scoreGate([rcCos(COS_FLOOR)], NL).band).toBe('answer')
+  })
+
+  it('cosine just below the floor does not ground', () => {
+    expect(scoreGate([rcCos(COS_FLOOR - 0.001)], NL).band).toBe('refuse')
+  })
+
+  // -- monotone: the OR never regresses a lexically-grounded query --
+  it('MONOTONE: a lexically-grounded query with a LOW cosine still answers', () => {
+    const d = scoreGate(
+      [rcCos(0.01, 'getUserById', 'function getUserById() {}')],
+      q('where is getUserById defined'),
+    )
+    expect(d.groundingScore).toBeGreaterThanOrEqual(GROUNDING_FLOOR)
+    expect(d.band).toBe('answer')
+  })
+
+  it('MONOTONE: a lexically-grounded query with cosine undefined is unchanged (answer)', () => {
+    const d = scoreGate(
+      [rcCos(undefined, 'getUserById', 'function getUserById() {}')],
+      q('where is getUserById defined'),
+    )
+    expect(d.band).toBe('answer')
   })
 })
 

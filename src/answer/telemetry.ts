@@ -75,4 +75,12 @@ export const ANSWER_GATES: Gate[] = [
     layer: 'answer',
     gateTest: 'tests/answer/did-you-mean.test.ts::suggestSymbol — near-miss detection (SC-8)',
   },
+  {
+    id: 'answer.semantic-grounding',
+    claim:
+      'scoreGate grounds additively on raw dense cosine (OR lexical): pure-NL-strong answered, off-topic refused, monotone (FTR-55)',
+    layer: 'answer',
+    gateTest:
+      'tests/answer/score-gate.test.ts::signal 1b: semantic grounding (raw cosine floor, FTR-55)',
+  },
 ]
