@@ -118,6 +118,21 @@ const FRONTEND_GATES: Gate[] = [
     layer: 'frontend',
     gateTest: 'web/tests/observability-tab.test.tsx::shows the per-layer CLI command',
   },
+  {
+    id: 'frontend.corpus-tree',
+    claim:
+      'the assisted-search browser derives a nested directory tree from the flat GET /symbols paths (shared prefixes collapse, non-vacuous)',
+    layer: 'frontend',
+    gateTest:
+      'web/tests/corpus-tree.test.tsx::buildCorpusTree turns flat paths into a nested dir tree',
+  },
+  {
+    id: 'frontend.symbol-autocomplete',
+    claim:
+      'the symbol combobox narrows its options as the query prefix gets more specific (assisted search)',
+    layer: 'frontend',
+    gateTest: 'web/tests/symbol-combobox.test.tsx::prefix filter narrows the option list',
+  },
 ]
 
 // gateTest files are repo-root-relative (e.g. 'web/tests/x'); web's vitest cwd is web/, so strip

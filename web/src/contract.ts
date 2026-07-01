@@ -42,3 +42,27 @@ export type {
   TraceWsMessage,
   WireProjection,
 } from '../../src/contracts/wire'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PENDING master ratification (TKT-517 escalation) — the corpus/symbols read-surface.
+//
+// GET /symbols -> SymbolsPayload powers the assisted-search UI (CorpusTree + SymbolCombobox).
+// The SSOT does NOT hold these types yet (verified: no SymbolEntry in src/contracts). Rather than
+// edit the master-owned contracts (RULE-019), we mirror the ESCALATED shape here, clearly marked.
+// These are `interface`/`type` declarations — also fully erased at compile time, so web ⊥ Node holds
+// (no Node code is bundled). THE 1-LINE SWAP: when master lands SymbolEntry/SymbolsPayload in
+// src/contracts, delete this block and add a single `export type { SymbolEntry, SymbolsPayload }
+// from '../../src/contracts/…'` line — the whole app imports from `../contract`, so nothing else
+// changes. Keep the shapes byte-identical to the escalation so the swap is mechanical.
+export interface SymbolEntry {
+  path: string
+  symbol: string
+  /** 'function' | 'class' | 'interface' | 'module' | 'type' | … (mirrors Chunk.kind). */
+  kind: string
+  lang: string
+  span: { startLine: number; endLine: number }
+}
+
+export interface SymbolsPayload {
+  symbols: SymbolEntry[]
+}

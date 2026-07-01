@@ -2,8 +2,15 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ChatView } from '../src/components/ChatView'
+import { ManualSearchTab } from '../src/components/ManualSearchTab'
 import { ObservabilityTab } from '../src/components/observability/ObservabilityTab'
-import { ANSWER_TEXT, answerProjection, healthFixture, statsFixture } from '../src/mocks/fixtures'
+import {
+  ANSWER_TEXT,
+  answerProjection,
+  healthFixture,
+  statsFixture,
+  symbolsFixture,
+} from '../src/mocks/fixtures'
 import { encodeSse } from '../src/mocks/sseEncode'
 import { makeQueryStream } from '../src/mocks/wireMock'
 import { streamFromString } from './sse-test-utils'
@@ -75,5 +82,32 @@ describe('accessibility — Observability tab', () => {
     }
     // the refresh action is a real, named button
     expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()
+  })
+})
+
+describe('accessibility — assisted search', () => {
+  it('exposes the corpus assist as an ARIA combobox + a browsable tree, with a labelled search box', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: unknown) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () =>
+            String(url).includes('/symbols') ? { symbols: symbolsFixture } : answerProjection,
+        } as unknown as Response),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<ManualSearchTab baseUrl="" />)
+
+    // the symbol autocomplete is a proper combobox (keyboard type-ahead)
+    expect(await screen.findByRole('combobox', { name: /find a symbol/i })).toBeInTheDocument()
+    // the deterministic search input stays a labelled textbox
+    expect(screen.getByRole('textbox', { name: /search query/i })).toBeInTheDocument()
+
+    // the corpus browser is a real ARIA tree once revealed
+    await user.click(screen.getByRole('button', { name: /browse files/i }))
+    expect(screen.getByRole('tree', { name: /corpus files/i })).toBeInTheDocument()
   })
 })

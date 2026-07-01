@@ -10,6 +10,7 @@ import type {
   Event,
   HealthReport,
   RankedChunk,
+  SymbolEntry,
   WireProjection,
 } from '../contract'
 import { makeTraceEvents } from './wireMock'
@@ -204,3 +205,47 @@ export const healthFixture: HealthReport = {
   },
   ts: 1_719_792_042_000,
 }
+
+const sym = (
+  path: string,
+  symbol: string,
+  kind: string,
+  startLine: number,
+  endLine: number,
+  lang = 'ts',
+): SymbolEntry => ({ path, symbol, kind, lang, span: { startLine, endLine } })
+
+/**
+ * Corpus symbol index (GET /symbols, TKT-517) — a representative slice of the REAL code-rag corpus so
+ * `npm run dev` shows a believable filesystem tree + symbol autocomplete. Shared path prefixes
+ * (src/contracts/*, src/http/routes/*, src/retrieve/*) exercise the tree-collapse; multiple symbols
+ * per file (wire.ts, membrane/index.ts) exercise the file -> symbols drill-down. Deterministic.
+ */
+export const symbolsFixture: SymbolEntry[] = [
+  sym('src/membrane/index.ts', 'query', 'function', 20, 44),
+  sym('src/membrane/index.ts', 'project', 'function', 46, 71),
+  sym('src/contracts/wire.ts', 'WireProjection', 'interface', 9, 16),
+  sym('src/contracts/wire.ts', 'SearchRequest', 'interface', 18, 21),
+  sym('src/contracts/wire.ts', 'SearchResponse', 'interface', 23, 27),
+  sym('src/contracts/projection.ts', 'Projection', 'interface', 11, 24),
+  sym('src/contracts/projection.ts', 'GateDecision', 'type', 26, 33),
+  sym('src/contracts/retrieval.ts', 'RankedChunk', 'interface', 8, 15),
+  sym('src/contracts/telemetry.ts', 'EngineTelemetry', 'interface', 30, 47),
+  sym('src/contracts/chunk.ts', 'Chunk', 'interface', 6, 19),
+  sym('src/retrieve/retrieve.ts', 'retrieve', 'function', 28, 79),
+  sym('src/retrieve/structural.ts', 'structuralScore', 'function', 24, 58),
+  sym('src/retrieve/symbols.ts', 'extractQuerySymbols', 'function', 12, 39),
+  sym('src/retrieve/rrf.ts', 'reciprocalRankFusion', 'function', 9, 33),
+  sym('src/ingest/walk.ts', 'walkCorpus', 'function', 15, 62),
+  sym('src/chunk/chunker.ts', 'chunkFile', 'function', 22, 88),
+  sym('src/chunk/chunker.ts', 'glueFallback', 'function', 90, 121),
+  sym('src/index/store.ts', 'IndexStore', 'class', 18, 140),
+  sym('src/index/embedder.ts', 'embed', 'function', 30, 66),
+  sym('src/answer/answer.ts', 'answer', 'function', 26, 92),
+  sym('src/answer/scoreGate.ts', 'scoreGate', 'function', 14, 48),
+  sym('src/http/routes/search.ts', 'registerSearch', 'function', 16, 41),
+  sym('src/http/routes/query.ts', 'registerQuery', 'function', 19, 73),
+  sym('src/http/routes/telemetry.ts', 'registerTelemetry', 'function', 18, 55),
+  sym('src/cli/run.ts', 'run', 'function', 24, 118),
+  sym('src/mcp/server.ts', 'createMcpServer', 'function', 20, 84),
+]

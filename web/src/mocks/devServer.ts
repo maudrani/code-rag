@@ -15,6 +15,7 @@ import {
   healthFixture,
   refuseProjection,
   statsFixture,
+  symbolsFixture,
   traceEventsFixture,
 } from './fixtures'
 import { encodeFrame } from './sseEncode'
@@ -104,6 +105,17 @@ export function mockWirePlugin(): Plugin {
         }
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify(healthFixture))
+      })
+
+      // GET /symbols — the corpus symbol index (TKT-517) the assisted-search browser reads. Proposed
+      // wire; the mock makes it demoable now. Shape: SymbolsPayload { symbols: SymbolEntry[] }.
+      server.middlewares.use('/symbols', (req, res, next) => {
+        if (req.method !== 'GET') {
+          next()
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ symbols: symbolsFixture }))
       })
 
       // WS /ws/trace — stream the current query's Events (M1 single-consumer, A4).
