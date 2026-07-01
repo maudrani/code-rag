@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { useTraceSocket } from './clients/useTraceSocket'
 import { ChatView } from './components/ChatView'
 import { ManualSearchTab } from './components/ManualSearchTab'
+import { ObservabilityTab } from './components/observability/ObservabilityTab'
 import { TracePanel } from './components/TracePanel'
 import { API_BASE, WS_BASE } from './lib/config'
 
-type Tab = 'chat' | 'search'
+type Tab = 'chat' | 'search' | 'observability'
 
 /**
  * App shell — the whole UI assembled against the wire (ADR-008). Tabs between the streaming
@@ -42,17 +43,28 @@ export function App() {
           >
             Manual search
           </button>
+          <button
+            type="button"
+            className={`tab${tab === 'observability' ? ' tab--active' : ''}`}
+            onClick={() => setTab('observability')}
+          >
+            Observability
+          </button>
         </nav>
       </header>
       <div className="layout">
         <div className="layout__main">
           {tab === 'chat' ? (
             <ChatView options={{ baseUrl: API_BASE }} onActiveQuery={setQueryId} />
-          ) : (
+          ) : tab === 'search' ? (
             <ManualSearchTab baseUrl={API_BASE} />
+          ) : (
+            <ObservabilityTab baseUrl={API_BASE} />
           )}
         </div>
-        <TracePanel events={trace.events} status={trace.status} />
+        {/* The trace rail is bound to the chat's active queryId — chat-only (search + observability
+            render full-width). */}
+        {tab === 'chat' ? <TracePanel events={trace.events} status={trace.status} /> : null}
       </div>
     </main>
   )

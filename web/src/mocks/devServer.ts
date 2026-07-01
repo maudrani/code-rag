@@ -9,7 +9,14 @@
 import type { IncomingMessage } from 'node:http'
 import type { Plugin, ViteDevServer } from 'vite'
 import { WebSocketServer } from 'ws'
-import { ANSWER_MARKDOWN, answerProjection, refuseProjection, traceEventsFixture } from './fixtures'
+import {
+  ANSWER_MARKDOWN,
+  answerProjection,
+  healthFixture,
+  refuseProjection,
+  statsFixture,
+  traceEventsFixture,
+} from './fixtures'
 import { encodeFrame } from './sseEncode'
 import { makeQueryStream, makeSearchResponse } from './wireMock'
 
@@ -77,6 +84,26 @@ export function mockWirePlugin(): Plugin {
         const body = JSON.stringify(makeSearchResponse(pickProjection(query)))
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(body)
+      })
+
+      // GET /stats — the per-layer telemetry snapshot (L1->L5) the Observability tab polls (FTR-56).
+      server.middlewares.use('/stats', (req, res, next) => {
+        if (req.method !== 'GET') {
+          next()
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(statsFixture))
+      })
+
+      // GET /health — the readiness surface (200 ok/degraded, 503 down); the fixture is healthy.
+      server.middlewares.use('/health', (req, res, next) => {
+        if (req.method !== 'GET') {
+          next()
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(healthFixture))
       })
 
       // WS /ws/trace — stream the current query's Events (M1 single-consumer, A4).

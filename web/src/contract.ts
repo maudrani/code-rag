@@ -19,6 +19,21 @@ export type {
   Turn,
 } from '../../src/contracts/projection'
 export type { RankedChunk, RetrievalResult } from '../../src/contracts/retrieval'
+// Telemetry read-surface (GET /stats + /health + /log). These live in the master SSOT
+// (src/contracts/telemetry) already — the Observability tab (FTR-56) consumes them over the wire,
+// so we re-export the SAME types (type-only, erased at compile time) for zero drift. No wire.ts
+// change was needed; the /stats + /health payloads ARE these structs.
+export type {
+  AnswerTelemetry,
+  ChunkTelemetry,
+  Consumer,
+  EngineTelemetry,
+  HealthReport,
+  IndexTelemetry,
+  IngestTelemetry,
+  Leg,
+  QueryLogEntry,
+} from '../../src/contracts/telemetry'
 export type {
   QueryRequest,
   QuerySseEvent,

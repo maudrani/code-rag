@@ -4,7 +4,14 @@
  * multi-file citations) and a `refuse` projection (low groundingScore). Trace events
  * deliberately include a FOREIGN queryId so the SC-03 filter has a negative case.
  */
-import type { Citation, Event, RankedChunk, WireProjection } from '../contract'
+import type {
+  Citation,
+  EngineTelemetry,
+  Event,
+  HealthReport,
+  RankedChunk,
+  WireProjection,
+} from '../contract'
 import { makeTraceEvents } from './wireMock'
 
 export const ANSWER_QUERY_ID = 'q-answer-001'
@@ -143,3 +150,57 @@ const foreignEvent: Event = {
 
 /** Trace stream for the current (answer) query PLUS one foreign-queryId event (filter negative). */
 export const traceEventsFixture: Event[] = [...makeTraceEvents(ANSWER_QUERY_ID), foreignEvent]
+
+/**
+ * Telemetry fixtures for the Observability tab (FTR-56) — the /stats + /health payloads. Realistic,
+ * internally consistent numbers so `npm run dev` shows a live-looking dashboard and the tests assert
+ * concrete values. Wired to the same ANSWER query as the chat fixture (one coherent demo story).
+ * The retrieve leg scores make the point of FTR-53 visible: `dense` is NON-ZERO (the embedder is live).
+ */
+export const statsFixture: EngineTelemetry = {
+  ingest: {
+    filesWalked: 214,
+    filesIndexed: 198,
+    skipped: 16,
+    chunks: 642,
+    byLang: { ts: 520, tsx: 88, json: 34 },
+    errors: [],
+    durationMs: 1840,
+  },
+  chunk: {
+    count: 642,
+    byKind: { function: 410, interface: 96, module: 60, class: 44, type: 32 },
+    byLang: { ts: 520, tsx: 88, json: 34 },
+    glueFallbacks: 7,
+  },
+  index: { docs: 642, sizeBytes: null, builtAt: 1_719_792_000_000, staleMs: 42_000 },
+  lastQuery: {
+    retrieve: {
+      ts: 1_719_792_042_000,
+      queryId: ANSWER_QUERY_ID,
+      consumer: 'web',
+      query: 'how does the membrane orchestrate a query?',
+      resultCount: 5,
+      scoresByLeg: { bm25: 0.0187, dense: 0.0231, structural: 0.0094 },
+      band: 'answer',
+      latencyMs: 38,
+    },
+    answer: {
+      band: 'answer',
+      tier: 'strong',
+      model: 'claude-opus-4-8',
+      tokens: 128,
+      estCost: 0.00026,
+    },
+  },
+}
+
+/** A healthy readiness snapshot (status ok; both checks pass) — the /health payload. */
+export const healthFixture: HealthReport = {
+  status: 'ok',
+  checks: {
+    indexed: { ok: true, detail: '642 docs' },
+    provider: { ok: true, detail: 'anthropic reachable' },
+  },
+  ts: 1_719_792_042_000,
+}

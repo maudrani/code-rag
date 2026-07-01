@@ -61,6 +61,48 @@ const FRONTEND_GATES: Gate[] = [
     layer: 'frontend',
     gateTest: 'web/tests/trace-socket.test.ts::opens /ws/trace WITH ?queryId=',
   },
+  {
+    id: 'frontend.telemetry-render',
+    claim:
+      'the Observability tab renders per-layer telemetry (L1→L5) from GET /stats as real values',
+    layer: 'frontend',
+    gateTest: 'web/tests/observability-tab.test.tsx::renders per-layer telemetry from /stats',
+  },
+  {
+    id: 'frontend.health-surface',
+    claim: 'the GET /health status + per-check pass/fail render as an anti-vacuity health card',
+    layer: 'frontend',
+    gateTest: 'web/tests/observability-tab.test.tsx::renders the health status',
+  },
+  {
+    id: 'frontend.retrieve-legs',
+    claim:
+      'the L4 retrieve card surfaces the 3-leg fused scores (bm25/dense/structural) — dense non-zero (FTR-53)',
+    layer: 'frontend',
+    gateTest: 'web/tests/observability-tab.test.tsx::renders the L4 per-leg scores',
+  },
+  {
+    id: 'frontend.telemetry-empty',
+    claim:
+      'a null lastQuery renders an explicit empty state (no query yet), never a blank/crashed card',
+    layer: 'frontend',
+    gateTest:
+      'web/tests/observability-tab.test.tsx::renders an empty state when there is no last query',
+  },
+  {
+    id: 'frontend.telemetry-error',
+    claim:
+      'a failed /stats fetch renders an error + Retry and NOT the layer cards (branch, non-vacuous)',
+    layer: 'frontend',
+    gateTest:
+      'web/tests/observability-tab.test.tsx::renders an error state with retry when /stats fails',
+  },
+  {
+    id: 'frontend.health-down',
+    claim: 'a 503 down health is surfaced as DATA (the client does not throw on !ok for /health)',
+    layer: 'frontend',
+    gateTest: 'web/tests/telemetry-client.test.ts::returns the down report on 503',
+  },
 ]
 
 // gateTest files are repo-root-relative (e.g. 'web/tests/x'); web's vitest cwd is web/, so strip
