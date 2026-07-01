@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { ChatMessage } from '../clients/useChatStream'
 import type { Chunk, Citation } from '../contract'
+import { closeUnterminated } from '../lib/markdownStream'
 import { resolveCitation } from '../lib/resolveCitation'
+import { AnswerMarkdown } from './AnswerMarkdown'
 import { Citations } from './Citations'
 import { DecisionBadge } from './DecisionBadge'
 import { SourceViewer } from './SourceViewer'
@@ -13,7 +15,7 @@ import { SourceViewer } from './SourceViewer'
  */
 export function MessageBubble({ message }: { message: ChatMessage }) {
   // `source === null` = closed; `{ chunk }` open (chunk may be null = trimmed from payload).
-  const [source, setSource] = useState<{ chunk: Chunk | null } | null>(null)
+  const [source, setSource] = useState<{ chunk: Chunk | null; span: Citation['span'] } | null>(null)
 
   if (message.role === 'user') {
     return (
@@ -26,7 +28,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   const refused = message.phase === 'refused' || message.decision?.band === 'refuse'
   const citations = message.citations ?? []
   const openCitation = (citation: Citation) => {
-    setSource({ chunk: resolveCitation(citation, message.results ?? []) })
+    setSource({ chunk: resolveCitation(citation, message.results ?? []), span: citation.span })
   }
 
   return (
@@ -38,10 +40,10 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           Not enough grounding in the codebase to answer confidently.
         </p>
       ) : (
-        <div className="bubble__content">{message.content}</div>
+        <AnswerMarkdown content={closeUnterminated(message.content)} />
       )}
       <Citations citations={citations} onOpen={openCitation} />
-      {source && <SourceViewer chunk={source.chunk} />}
+      {source && <SourceViewer chunk={source.chunk} citationSpan={source.span} />}
     </div>
   )
 }

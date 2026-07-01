@@ -97,6 +97,33 @@ export const answerProjection: WireProjection = {
 export const ANSWER_TEXT =
   'The membrane resolves the turn via L0, retrieves with L4, projects the SSOT, then streams the answer. See membrane/index.ts:20.'
 
+/**
+ * A markdown-rich answer for the dev-server demo (TKT-510) — exercises GFM (heading, list,
+ * inline code) + a fenced ts block so `npm run dev` shows the real markdown + Shiki rendering.
+ * Built as a line array so the ``` fence isn't a nested template-literal backtick.
+ */
+export const ANSWER_MARKDOWN = [
+  '## How the membrane orchestrates a query',
+  '',
+  'The **membrane** is the master-owned seam. For each turn it runs three deterministic',
+  'steps before the LLM is ever called:',
+  '',
+  '1. **L0** resolves anaphora into a standalone query.',
+  '2. **L4** retrieves candidates (hybrid BM25 + dense + structural, fused by RRF).',
+  '3. `project()` assembles the `Projection` — the SSOT every consumer reads.',
+  '',
+  '```ts',
+  'export async function query(question: string, history: Turn[]) {',
+  '  const resolvedQuery = await l0.resolve(question, history)',
+  '  const ranked = await l4.retrieve(resolvedQuery)',
+  '  return project(ranked)',
+  '}',
+  '```',
+  '',
+  'Only then does the score-gate decide `band` (answer vs refuse) and `tier`',
+  '(cheap vs strong). See `membrane/index.ts:20`.',
+].join('\n')
+
 export const refuseProjection: WireProjection = {
   queryId: REFUSE_QUERY_ID,
   question: 'what is the capital of france?',

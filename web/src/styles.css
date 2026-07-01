@@ -316,33 +316,57 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-.source__code {
+/* Shiki code blocks (TKT-509) — shared by the markdown answer (TKT-510) + source viewer (TKT-511). */
+.code-block {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.code-block pre {
   margin: 0;
-  padding: 8px 0;
+  padding: 10px 14px;
   overflow-x: auto;
   font-size: 12.5px;
-}
-
-.source__line {
-  display: flex;
-  gap: 12px;
-  padding: 0 12px;
-}
-
-.source__line--hl {
-  background: rgba(68, 147, 248, 0.06);
-}
-
-.source__ln {
-  color: var(--muted);
-  user-select: none;
-  min-width: 28px;
-  text-align: right;
-}
-
-.source__lc {
-  white-space: pre;
+  line-height: 1.5;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.code-block--plain {
+  background: #161b22;
+  color: var(--fg);
+  white-space: pre;
+}
+
+/* The cited line-span (source viewer, TKT-511): a full-width band on the cited lines only. */
+.code-block .line--cited {
+  display: inline-block;
+  width: 100%;
+  background: rgba(68, 147, 248, 0.14);
+  box-shadow: inset 2px 0 0 rgba(68, 147, 248, 0.9);
+}
+
+/* The cited chunk renders through CodeBlock; number lines from the chunk's absolute start line. */
+.source__lines .code-block {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.source__lines .shiki code {
+  counter-reset: ln calc(var(--start-line, 1) - 1);
+}
+
+.source__lines .line::before {
+  counter-increment: ln;
+  content: counter(ln);
+  display: inline-block;
+  width: 2.5em;
+  margin-right: 1em;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
 }
 
 /* ---- trace panel ---- */

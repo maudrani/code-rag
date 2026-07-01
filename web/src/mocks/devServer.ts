@@ -9,7 +9,7 @@
 import type { IncomingMessage } from 'node:http'
 import type { Plugin, ViteDevServer } from 'vite'
 import { WebSocketServer } from 'ws'
-import { ANSWER_TEXT, answerProjection, refuseProjection, traceEventsFixture } from './fixtures'
+import { ANSWER_MARKDOWN, answerProjection, refuseProjection, traceEventsFixture } from './fixtures'
 import { encodeFrame } from './sseEncode'
 import { makeQueryStream, makeSearchResponse } from './wireMock'
 
@@ -59,7 +59,7 @@ export function mockWirePlugin(): Plugin {
           return
         }
         const question = parseField(await readBody(req), 'question')
-        const events = makeQueryStream(pickProjection(question), { answer: ANSWER_TEXT })
+        const events = makeQueryStream(pickProjection(question), { answer: ANSWER_MARKDOWN })
         res.writeHead(200, SSE_HEADERS)
         for (const event of events) {
           res.write(encodeFrame(event))
