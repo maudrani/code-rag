@@ -59,6 +59,15 @@ export function rrfFuse(
 ): RetrievalResult {
   const { k, weights } = config
 
+  // FTR-55: capture the dense leg's RAW cosine per chunk BEFORE fusing it away. `fused` is rank-based
+  // and tiny (~0.005) — it can't express absolute match quality; the raw cosine can, and the grounding
+  // gate floors on it. First occurrence wins (the dense leg is best-first, so that's the highest
+  // cosine). ONLY the dense leg's score is surfaced — bm25/structural raw scores are a different scale.
+  const denseCosine = new Map<string, number>()
+  for (const candidate of legs.dense) {
+    if (!denseCosine.has(candidate.chunkId)) denseCosine.set(candidate.chunkId, candidate.score)
+  }
+
   // Accumulate each leg's weighted RRF contribution per chunk id. Absent legs stay 0,
   // so `fused` is exactly the sum of the three contributions (parallel, not cascade).
   const contributions = new Map<string, { bm25: number; dense: number; structural: number }>()
@@ -84,7 +93,17 @@ export function rrfFuse(
   for (const [chunkId, scores] of contributions) {
     const chunk = chunks.get(chunkId)
     if (chunk === undefined) continue // a leg referenced an unknown chunk — skip defensively
-    ranked.push({ chunk, scores, fused: scores.bm25 + scores.dense + scores.structural })
+    const entry: RankedChunk = {
+      chunk,
+      scores,
+      fused: scores.bm25 + scores.dense + scores.structural,
+    }
+    // Surface the raw dense cosine (FTR-55). OMIT the key when the chunk had no dense candidate —
+    // absence is `undefined`, NEVER 0 (0 reads as a confident non-match; exactOptionalPropertyTypes
+    // forbids setting `cosine: undefined`, so we conditionally assign a present value only).
+    const cosine = denseCosine.get(chunkId)
+    if (cosine !== undefined) entry.cosine = cosine
+    ranked.push(entry)
   }
 
   // Deterministic order: fused desc, ties broken by chunk id asc (stable across runs).

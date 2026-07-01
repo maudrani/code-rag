@@ -137,6 +137,81 @@ describe('rrfFuse — weighting + rank behaviour', () => {
   })
 })
 
+describe('rrfFuse — dense cosine surfacing (FTR-55: the raw absolute-relevance signal)', () => {
+  /** a candidate carrying a meaningful raw score (the dense leg's cosine). */
+  const atScore = (chunkId: string, score: number) => ({ chunkId, score })
+
+  it('surfaces the dense leg raw cosine onto RankedChunk.cosine', () => {
+    const legs: LegResults = { bm25: [], dense: [atScore(c1, 0.87)], structural: [] }
+    const [r] = rrfFuse(legs, chunkMap)
+    expect(r?.cosine).toBe(0.87)
+    // additive: fused is still the pure RRF contribution (dense rank-1 ⇒ 0.4/61), untouched by cosine
+    expect(r?.fused).toBeCloseTo(0.4 / 61, 12)
+  })
+
+  it('leaves cosine UNDEFINED (never 0) for a bm25/structural-only hit — the TKT-337 negative', () => {
+    const legs: LegResults = { bm25: [atScore(c1, 5)], dense: [], structural: [atScore(c1, 3)] }
+    const [r] = rrfFuse(legs, chunkMap)
+    expect(r?.cosine).toBeUndefined() // no dense candidate ⇒ no semantic signal
+    expect(r?.cosine).not.toBe(0) // 0 would read as a CONFIDENT non-match and corrupt the floor
+    expect(Object.hasOwn(r ?? {}, 'cosine')).toBe(false) // the key is OMITTED, not set to undefined
+  })
+
+  it('surfaces ONLY the dense score — bm25/structural raw scores never become cosine', () => {
+    const legs: LegResults = {
+      bm25: [atScore(c1, 9)],
+      dense: [atScore(c1, 0.42)],
+      structural: [atScore(c1, 3)],
+    }
+    const [r] = rrfFuse(legs, chunkMap)
+    expect(r?.cosine).toBe(0.42) // the dense cosine, not bm25's 9 nor structural's 3
+  })
+
+  it('an empty/absent dense leg leaves EVERY cosine undefined (no spurious zeros)', () => {
+    const legs: LegResults = {
+      bm25: [atScore(c1, 1), atScore(c2, 1)],
+      dense: [],
+      structural: [atScore(c1, 1)],
+    }
+    for (const r of rrfFuse(legs, chunkMap)) expect(r.cosine).toBeUndefined()
+  })
+
+  it('distinguishes a present-but-zero cosine (0) from an absent one (undefined)', () => {
+    // a real dense candidate whose cosine is exactly 0 keeps 0 — ABSENCE is undefined, not a 0 value.
+    const present: LegResults = { bm25: [], dense: [atScore(c1, 0)], structural: [] }
+    const absent: LegResults = { bm25: [atScore(c1, 1)], dense: [], structural: [] }
+    expect(rrfFuse(present, chunkMap)[0]?.cosine).toBe(0) // present with a genuine 0-cosine
+    expect(rrfFuse(absent, chunkMap)[0]?.cosine).toBeUndefined() // absent from the dense leg
+  })
+
+  it('keeps the highest cosine when a chunk appears twice in the dense leg (first/best wins)', () => {
+    const legs: LegResults = {
+      bm25: [],
+      dense: [atScore(c1, 0.9), atScore(c1, 0.2)],
+      structural: [],
+    }
+    expect(rrfFuse(legs, chunkMap)[0]?.cosine).toBe(0.9)
+  })
+
+  it('does not change fused, scores, or ordering (additive, no regression)', () => {
+    const scored: LegResults = {
+      bm25: [atScore(c1, 5), atScore(c2, 3)],
+      dense: [atScore(c2, 0.9), atScore(c1, 0.1)],
+      structural: [],
+    }
+    const zero: LegResults = {
+      bm25: [at(c1), at(c2)],
+      dense: [at(c2), at(c1)],
+      structural: [],
+    }
+    const withCos = rrfFuse(scored, chunkMap)
+    const withoutCos = rrfFuse(zero, chunkMap)
+    // identical ranking + fused whether the raw scores are meaningful or 0 (fusion ignores value)
+    expect(withCos.map((r) => r.chunk.id)).toEqual(withoutCos.map((r) => r.chunk.id))
+    expect(withCos.map((r) => r.fused)).toEqual(withoutCos.map((r) => r.fused))
+  })
+})
+
 describe('rrfFuse — edge + negative cases', () => {
   it('returns [] when every leg is empty', () => {
     expect(rrfFuse({ bm25: [], dense: [], structural: [] }, chunkMap)).toEqual([])

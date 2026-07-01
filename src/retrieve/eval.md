@@ -64,6 +64,34 @@ requires: the gate fails by construction if the behaviour is removed. The 1.000 
 committed byte-stable baseline (`fixtures/definition-boost.baseline.json`); a drop is a real
 regression, NaN is a fail, and a gold target absent from the corpus errors (drift, not a silent 0).
 
+## Semantic grounding floor — `COS_FLOOR` (FTR-55)
+
+The dense leg computes a raw cosine per hit; `rrfFuse` now surfaces it onto `RankedChunk.cosine`
+(the rank-based `fused` score can't express absolute match quality). The answer gate grounds when
+**lexical overlap OR** `topCosine(top-3) >= COS_FLOOR`. `COS_FLOOR` is corpus-tuned, set from the
+measured cosine distribution (`tests/retrieve/cos-floor.eval.test.ts`, `RUN_SLOW`), NOT a calibrated
+confidence (TKT-337 + ProsusAI). Measured (this corpus · MiniLM-q8 · top-3 cosine):
+
+| bucket (probe)                         | top-3 cosine | what it is |
+|----------------------------------------|--------------|------------|
+| pure-NL rescue — `createOnnxEmbedder`  | 0.300 | "load a local model and turn text into a vector" |
+| pure-NL rescue — `SqliteStore`         | 0.456 | "keep search data in a single sqlite file" |
+| pure-NL rescue — `buildStructuralIndex`| 0.566 | "build a call graph and import graph from code" |
+| gibberish                              | ≤ **0.233** | "asdf qwerty zxcv", "florb glorp nizzle" |
+| off-topic                              | ≤ 0.153 | sourdough / capital of France / lower-back / cake |
+
+**`COS_FLOOR = 0.27`** — the midpoint of the separation band `(noise-max 0.233, rescue-min 0.300)`,
+margin +0.037 over gibberish / −0.030 under the weakest rescue. It clears the pure-NL queries whose
+target identifier is absent (the lexical floor's false-refuse, our semantic-0.20 pain) and refuses
+off-topic + gibberish.
+
+> Honest finding: raw cosine **alone does not separate every gold from gibberish** — the
+> exact-identifier gold (`rrfFuse` 0.257, `structural` 0.199) score *below* gibberish (0.233). Those
+> aren't the cosine floor's job: they're lexically grounded (they name identifiers), so the
+> **lexical-OR-cosine** gate answers them while cosine refuses the noise. The cosine floor's job is
+> the *pure-NL rescue* band, and there it separates cleanly. The OR is monotone (it only turns
+> refuses into answers), so it can't regress a query lexical already grounds.
+
 **Why a pin AND a guaranteed slot (the eval drove the design).** The RRF pin alone is *not*
 airtight: running the gate with the **real ONNX dense leg** (`RUN_SLOW`) showed the dense leg can
 flood the top-k and push a pinned-but-otherwise-weak body back *out* (recall fell below 1). So the
