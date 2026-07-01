@@ -171,10 +171,17 @@ ANTHROPIC_API_KEY=sk-... npm run cli -- ask "how does the score gate work"
 npm run mcp
 ```
 
-Open the printed Vite URL: streaming chat with a grounding/cost badge, clickable
-citations into a source viewer, a live L0→L5 trace rail, and a manual-search tab that
-shows the per-leg scores. The whole pipeline is also usable in-process via the package
-(`createEngine`).
+```bash
+# packaged — the whole stack in Docker, or the compiled bin (no tsx)
+docker compose up --build      # server :8787 + web UI in one command
+npm run build                  # emits a runnable dist (tree-sitter grammar copied into dist)
+node dist/src/cli/index.js ask "how does retrieval fuse the legs" --dry
+```
+
+Open the printed Vite URL: streaming chat with a grounding/cost badge, clickable citations
+into a source viewer, a live L0→L5 trace rail, a manual-search tab that shows the per-leg
+scores, and an **Observability** tab (per-layer L1→L5 telemetry + health, read over the wire).
+The whole pipeline is also usable in-process via the package (`createEngine`).
 
 ---
 
@@ -221,8 +228,9 @@ history stays a clean, attributed, per-layer narrative.
 - **Surface** — all five consumers ship behind the one `Projection`: package, HTTP/SSE,
   web UI, **CLI**, and **MCP**. The MCP server is the editor-embedded cost story — an agent
   on a Claude/Cursor subscription runs `ask`/`search` at **no per-call API cost**; the
-  metered API path (the numbers above) suits a self-hosted deploy. Remaining: package the
-  compiled bin as a `dist` build + Docker (copying the tree-sitter grammar into `dist`).
+  metered API path (the numbers above) suits a self-hosted deploy. Shipped: a compiled `dist`
+  bin (the tree-sitter grammar copied in) + a multi-stage Dockerfile and `docker-compose` (server
+  + web), so the whole stack runs with one `docker compose up`.
 
 ---
 
@@ -235,8 +243,9 @@ history stays a clean, attributed, per-layer narrative.
 - **Structural eval is a floor** — the gold set targets symbol *definitions*, so it
   under-counts the structural leg's real value on "where is X used / how does this
   subsystem work" queries.
-- **Compiled-bin packaging** — the CLI + MCP run via `tsx` today (`npm run cli` / `mcp`);
-  the published `dist` bin additionally needs the tree-sitter `.wasm` copied into `dist`.
+- **Cold-start** — the first live query embeds the corpus (minutes on a large repo). The index now
+  persists with a stat-only (mtime+size) warm-restart that re-embeds only changed files; wiring it
+  into the server's lazy self-index is the remaining step.
 - **Reranker** — grounding now ORs lexical overlap with the raw dense cosine (the absolute signal
   RRF ranks can't express). The remaining precision lever is a cross-encoder **reranker** applied
   after fusion on the top-K.
