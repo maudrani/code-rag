@@ -20,6 +20,7 @@ export type {
 } from './projection.js'
 export type { AnswerChunk, Provider } from './provider.js'
 export type { RankedChunk, RetrievalResult } from './retrieval.js'
+export { COS_FLOOR } from './retrieval.js'
 export type {
   AnswerTelemetry,
   ChunkTelemetry,
