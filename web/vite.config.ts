@@ -1,13 +1,21 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { mockWirePlugin } from './src/mocks/devServer'
 
-// No path aliases: the root Biome enforces noUndeclaredDependencies (error) globally and
-// does not resolve tsconfig path aliases, so web/ uses relative imports (FTR-51 / TKT-501 D3).
-// mockWirePlugin serves the ADR-008 wire in dev so the whole UI runs ⊥ surface (TKT-502).
+// The `@` → src alias is required by shadcn/ui (components import `@/lib/utils`, `@/components/ui/*`).
+// This supersedes the FTR-51 no-alias decision: web/ now has its own biome.json (noUndeclaredDependencies
+// off for the alias) and is excluded from the root Biome CI (FTR-56 migration). tailwindcss() is the
+// Tailwind v4 Vite plugin; mockWirePlugin serves the ADR-008 wire in dev so the UI runs ⊥ surface.
 export default defineConfig({
-  plugins: [react(), mockWirePlugin()],
+  plugins: [react(), tailwindcss(), mockWirePlugin()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

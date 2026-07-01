@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* shadcn token layer (FTR-56). The app is dark-only; the OKLCH values map the existing palette
+   (styles.css :root) so the look is preserved. @theme inline exposes them as Tailwind utilities
+   (bg-background, text-foreground, border-border, …). Legacy styles.css still loads for the
+   not-yet-migrated components and shrinks as the migration proceeds. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  /* semantic decision colors (answer/refuse tier badges) — our palette, kept as utilities */
+  --color-answer: var(--answer);
+  --color-refuse: var(--refuse);
+  --color-strong: var(--strong);
+  --color-cheap: var(--cheap);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Dark-only: the same palette on :root and .dark (index.html sets class="dark"). Mapped from
+   #0d1117/#161b22/#1c2230/#2b3240/#e6edf3/#8b949e/#4493f8 + the answer/refuse/strong/cheap set. */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.17 0.013 258);
+  --foreground: oklch(0.94 0.008 250);
+  --card: oklch(0.21 0.014 258);
+  --card-foreground: oklch(0.94 0.008 250);
+  --popover: oklch(0.21 0.014 258);
+  --popover-foreground: oklch(0.94 0.008 250);
+  --primary: oklch(0.65 0.16 254);
+  --primary-foreground: oklch(0.98 0.002 250);
+  --secondary: oklch(0.25 0.017 258);
+  --secondary-foreground: oklch(0.94 0.008 250);
+  --muted: oklch(0.25 0.017 258);
+  --muted-foreground: oklch(0.67 0.013 250);
+  --accent: oklch(0.25 0.017 258);
+  --accent-foreground: oklch(0.94 0.008 250);
+  --destructive: oklch(0.64 0.21 25);
+  --border: oklch(0.31 0.02 257);
+  --input: oklch(0.31 0.02 257);
+  --ring: oklch(0.65 0.16 254);
+  --chart-1: oklch(0.65 0.16 254);
+  --chart-2: oklch(0.63 0.16 149);
+  --chart-3: oklch(0.65 0.18 296);
+  --chart-4: oklch(0.73 0.14 78);
+  --chart-5: oklch(0.7 0.14 230);
+  --answer: oklch(0.63 0.16 149);
+  --refuse: oklch(0.73 0.14 78);
+  --strong: oklch(0.65 0.18 296);
+  --cheap: oklch(0.7 0.14 245);
+}
+
+.dark {
+  --background: oklch(0.17 0.013 258);
+  --foreground: oklch(0.94 0.008 250);
+  --card: oklch(0.21 0.014 258);
+  --card-foreground: oklch(0.94 0.008 250);
+  --popover: oklch(0.21 0.014 258);
+  --popover-foreground: oklch(0.94 0.008 250);
+  --primary: oklch(0.65 0.16 254);
+  --primary-foreground: oklch(0.98 0.002 250);
+  --secondary: oklch(0.25 0.017 258);
+  --secondary-foreground: oklch(0.94 0.008 250);
+  --muted: oklch(0.25 0.017 258);
+  --muted-foreground: oklch(0.67 0.013 250);
+  --accent: oklch(0.25 0.017 258);
+  --accent-foreground: oklch(0.94 0.008 250);
+  --destructive: oklch(0.64 0.21 25);
+  --border: oklch(0.31 0.02 257);
+  --input: oklch(0.31 0.02 257);
+  --ring: oklch(0.65 0.16 254);
+  --chart-1: oklch(0.65 0.16 254);
+  --chart-2: oklch(0.63 0.16 149);
+  --chart-3: oklch(0.65 0.18 296);
+  --chart-4: oklch(0.73 0.14 78);
+  --chart-5: oklch(0.7 0.14 230);
+  --answer: oklch(0.63 0.16 149);
+  --refuse: oklch(0.73 0.14 78);
+  --strong: oklch(0.65 0.18 296);
+  --cheap: oklch(0.7 0.14 245);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

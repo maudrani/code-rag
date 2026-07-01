@@ -91,3 +91,29 @@ describe('useTraceSocket — resets on queryId change', () => {
     expect(result.current.events).toHaveLength(0)
   })
 })
+
+describe('useTraceSocket — requests the server replay via ?queryId= (FTR-56 Finding 1)', () => {
+  it('opens /ws/trace WITH ?queryId= so a late subscriber gets the replay (L0→L5), not only L5', () => {
+    FakeWebSocket.reset()
+    const options = { createWebSocket: (url: string) => new FakeWebSocket(url) }
+    const { result } = renderHook(() => useTraceSocket(ANSWER_QUERY_ID, options))
+
+    // THE FIX (non-vacuous): the URL must carry the queryId so the server takes the REPLAY path
+    // (forwardTraceReplay). A bare /ws/trace makes the server skip the replay, and the front —
+    // which learns the queryId from the SSE only AFTER L0–L4 fired — subscribes late and sees
+    // nothing. Reverting the fix drops the query string and fails this assertion.
+    expect(first().url).toContain(`?queryId=${ANSWER_QUERY_ID}`)
+
+    // Simulate the server replaying Q's buffered L0–L4 on connect, then tailing live.
+    act(() => {
+      first().open()
+      for (const e of traceEventsFixture.filter((ev) => ev.queryId === ANSWER_QUERY_ID)) {
+        first().emit(e)
+      }
+    })
+    const layers = result.current.events.map((e) => e.layer)
+    expect(layers).toContain('L0') // the early events replay...
+    expect(layers).toContain('L5') // ...through to the tail — the full gradient
+    expect(result.current.events.length).toBeGreaterThan(1)
+  })
+})

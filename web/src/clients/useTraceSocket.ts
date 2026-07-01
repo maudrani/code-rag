@@ -40,7 +40,11 @@ export function useTraceSocket(
       setStatus('closed')
       return
     }
-    const url = `${opts.baseUrl ?? ''}/ws/trace`
+    // Subscribe WITH the queryId so the server replays this query's buffered L0–L4 before tailing
+    // live (src/http/routes/ws-trace.ts forwardTraceReplay). Without it the front — which learns
+    // the queryId from the SSE meta AFTER L0–L4 fired — subscribes late and the trace stays empty
+    // (demo Finding 1). The client-side queryId filter in openTraceSocket stays as belt-and-suspenders.
+    const url = `${opts.baseUrl ?? ''}/ws/trace?queryId=${encodeURIComponent(queryId)}`
     const socket = openTraceSocket(
       url,
       queryId,

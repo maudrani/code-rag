@@ -18,11 +18,19 @@
   "dependencies": {
     "@shikijs/langs": "^4.3.0",
     "@shikijs/themes": "^4.3.0",
+    "@tailwindcss/vite": "^4.3.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.22.0",
+    "radix-ui": "^1.6.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.1.0",
+    "recharts": "^3.8.0",
     "remark-gfm": "^4.0.1",
-    "shiki": "^4.3.0"
+    "shiki": "^4.3.0",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

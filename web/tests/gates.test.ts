@@ -1,15 +1,70 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { FRONTEND_GATES, type Gate } from '../src/gates'
 
-// FTR-52 — the frontend row's anti-vacuity registry entries. Every DECLARED rendering behavior
-// maps to a STANDING, resolvable, exercised gate, so once master folds ...FRONTEND_GATES into the
-// seed, registryHasGap() covers the web row globally. web ⊥ Node, so this is a SELF-CONTAINED
-// guard (a local mirror of the registry's audit rule) — no import of the Node registry.
+// FRONTEND_GATES — the frontend row's anti-vacuity registry entries, WEB-SIDE ONLY (FTR-52 + FTR-56).
+// Per the observability design (frontend-observability-dashboard.md §5): these live in the web's own
+// test, NOT the Node registry — web ⊥ Node (the browser imports no Node code, and the master does not
+// fold web gates into src/registry.ts). Every DECLARED rendering/observability behavior maps to a
+// STANDING, resolvable, exercised test; a typo'd/fabricated reference is caught by the phantom-guard.
+interface Gate {
+  id: string
+  claim: string
+  layer: string
+  gateTest?: string
+  exercised?: boolean
+}
+
+const FRONTEND_GATES: Gate[] = [
+  {
+    id: 'frontend.markdown-render',
+    claim: 'the assistant answer renders GFM markdown as real DOM elements, not raw source text',
+    layer: 'frontend',
+    gateTest: 'web/tests/answer-markdown.test.tsx::renders GFM markdown as real DOM elements',
+  },
+  {
+    id: 'frontend.answer-xss-safe',
+    claim:
+      'raw HTML in the LLM answer stays escaped (no rehype-raw) and dangerous URL schemes are neutralized',
+    layer: 'frontend',
+    gateTest: 'web/tests/answer-markdown.test.tsx::escapes raw HTML in the answer',
+  },
+  {
+    id: 'frontend.code-highlight',
+    claim: 'code is tokenized with Shiki into colored token spans (non-vacuous)',
+    layer: 'frontend',
+    gateTest: 'web/tests/highlighter.test.ts::tokenizes known code into colored token spans',
+  },
+  {
+    id: 'frontend.highlight-fallback',
+    claim: 'an unknown language degrades to escaped plaintext without throwing',
+    layer: 'frontend',
+    gateTest:
+      'web/tests/highlighter.test.ts::falls back to escaped plaintext for an unknown language',
+  },
+  {
+    id: 'frontend.stream-safe',
+    claim: 'a partial answer with an unterminated ``` fence renders contained (closeUnterminated)',
+    layer: 'frontend',
+    gateTest: 'web/tests/markdown-stream.test.ts::closes an odd (unterminated)',
+  },
+  {
+    id: 'frontend.cited-span',
+    claim: 'the source viewer bands ONLY the cited line-span, not every line (non-vacuous)',
+    layer: 'frontend',
+    gateTest: 'web/tests/source-viewer.test.tsx::bands ONLY the cited sub-range',
+  },
+  {
+    id: 'frontend.trace-replay',
+    claim:
+      'the trace client subscribes /ws/trace?queryId= so a late subscriber gets the full L0→L5 replay, not only L5',
+    layer: 'frontend',
+    gateTest: 'web/tests/trace-socket.test.ts::opens /ws/trace WITH ?queryId=',
+  },
+]
 
 // gateTest files are repo-root-relative (e.g. 'web/tests/x'); web's vitest cwd is web/, so strip
-// the leading 'web/' and resolve against cwd. (import.meta.url is not a file: URL under vite.)
+// the leading 'web/' and resolve against cwd.
 function resolveRef(file: string): string {
   return join(process.cwd(), file.replace(/^web\//, ''))
 }
@@ -19,9 +74,9 @@ function isBacked(gate: Gate): boolean {
   return (gate.gateTest ?? '').trim().length > 0 && gate.exercised !== false
 }
 
-describe('FRONTEND_GATES — anti-vacuity registry (FTR-52)', () => {
-  it('declares a backed, unique gate per rendering boundary (SC-1..SC-6)', () => {
-    expect(FRONTEND_GATES.length).toBeGreaterThanOrEqual(6)
+describe('FRONTEND_GATES — anti-vacuity registry (web-side)', () => {
+  it('declares a backed, unique gate per rendering/observability boundary', () => {
+    expect(FRONTEND_GATES.length).toBeGreaterThanOrEqual(7)
     expect(FRONTEND_GATES.every(isBacked)).toBe(true)
     expect(new Set(FRONTEND_GATES.map((g) => g.id)).size).toBe(FRONTEND_GATES.length)
     expect(new Set(FRONTEND_GATES.map((g) => g.layer))).toEqual(new Set(['frontend']))
