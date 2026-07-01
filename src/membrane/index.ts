@@ -83,6 +83,9 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
   let indexing: Promise<IngestReport> | null = null
   let queryCounter = 0
 
+  // FTR-4 TKT-004: the single time source — an injected clock (test seam) or Date.now (prod).
+  const now = config.now ?? Date.now
+
   // ─── observability state (master-owned seam; telemetry.ts) ────────────────────────────
   // The holding (non-per-query) telemetry, the per-query ledger, and the last L5 telemetry.
   let ingestTelemetry: IngestTelemetry | null = null
@@ -113,7 +116,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
   })
 
   async function ingest(repoPath: string = corpusPath): Promise<IngestReport> {
-    const started = Date.now()
+    const started = now()
     await initParser() // async tree-sitter init — required before chunking
     const { chunks, files } = ingestAndChunk(repoPath)
     storeHandle?.close() // release the previous store handle on re-ingest
@@ -154,7 +157,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     // collectIngestTelemetry projects the ingest result (L1). `skipped: []` for now (the walker's
     // skips are not yet threaded here); the IngestTelemetry invariant filesWalked === filesIndexed +
     // skipped + errors.length stays honest by construction inside collectIngestTelemetry.
-    const durationMs = Date.now() - started
+    const durationMs = now() - started
     chunkTelemetry = collectChunkTelemetry(chunks)
     ingestTelemetry = collectIngestTelemetry({
       files,
@@ -162,7 +165,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
       chunkCount: chunks.length,
       durationMs,
     })
-    indexBuiltAt = Date.now()
+    indexBuiltAt = now()
     return { ...ingestStats, durationMs }
   }
 
@@ -188,7 +191,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     history: Turn[],
     intent: ConsumerIntent,
   ): Promise<Projection> {
-    const queryStart = Date.now()
+    const queryStart = now()
     const ready = await ensureIndexed()
     const queryId = `q${++queryCounter}`
 
@@ -236,7 +239,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     // unit-assertable (fresh copy of the TOP result's per-leg scores; all-zero if none).
     const scoresByLeg = topScoresByLeg(results)
     ledger.push({
-      ts: Date.now(),
+      ts: now(),
       queryId,
       consumer: intent,
       query: question,
@@ -246,7 +249,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
       // FTR-3 P1: the routing decision, per query (from the gate SSOT; reused, not re-derived).
       tier: projection.decision.tier,
       model: projection.decision.model,
-      latencyMs: Date.now() - queryStart,
+      latencyMs: now() - queryStart,
     })
 
     // A refused query never reaches the provider, so answer() early-returns and would leave
@@ -301,7 +304,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
             docs: ingestStats.chunks,
             sizeBytes: null, // the live index is :memory: — no on-disk size
             builtAt: indexBuiltAt,
-            staleMs: Date.now() - indexBuiltAt,
+            staleMs: now() - indexBuiltAt,
           }
     const lastEntry = ledger[ledger.length - 1]
     const lastQuery =
@@ -324,7 +327,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     return {
       status: indexed ? 'ok' : 'degraded',
       checks: { indexed: { ok: indexed }, provider: { ok: providerOk } },
-      ts: Date.now(),
+      ts: now(),
     }
   }
 

@@ -33,6 +33,9 @@ export interface EngineConfig {
    *  full query -> answer flow is E2E-testable through L5 with no network/key. Absent -> the real Claude
    *  provider (createClaudeProvider(apiKey)), exactly as production. */
   provider?: Provider
+  /** an injected clock — a TEST SEAM (FTR-4 TKT-004): a test passes a fixed/monotonic now() so the
+   *  observability record (ts, latencyMs, staleMs) is deterministic. Default: Date.now (prod unchanged). */
+  now?: () => number
 }
 
 /**
