@@ -7,6 +7,13 @@ export interface SerializedResult {
   symbol: string
   /** the RRF-fused retrieval score */
   score: number
+  /**
+   * raw dense cosine similarity for this hit (0..1) — the ABSOLUTE relevance signal the
+   * rank-based `score` cannot express (RankedChunk.cosine, FTR-55). Included so the CLI
+   * `--json` + the MCP structuredContent show the same per-hit relevance the HTTP wire does.
+   * OMITTED when the hit had no dense candidate — never 0 (0 reads as a confident non-match).
+   */
+  cosine?: number
 }
 
 /**
@@ -40,6 +47,8 @@ export function serializeProjection(p: Projection): ProjectionDTO {
       span: r.chunk.span,
       symbol: r.chunk.symbol,
       score: r.fused,
+      // include the raw cosine when present; OMIT the key when undefined (never 0).
+      ...(r.cosine !== undefined ? { cosine: r.cosine } : {}),
     })),
     citations: p.citations,
     decision: p.decision,

@@ -62,4 +62,17 @@ describe('serializeProjection — TKT-408', () => {
     const dto = serializeProjection(projection)
     expect(dto.results[0]?.score).toBe(0)
   })
+
+  it('carries the raw per-hit cosine when the RankedChunk has it (TKT-428)', () => {
+    const dto = serializeProjection(
+      makeProjection({ results: [makeRankedChunk({ cosine: 0.42 })] }),
+    )
+    expect(dto.results[0]?.cosine).toBe(0.42) // absolute relevance, consistent with the HTTP wire
+  })
+
+  it('OMISSION: a hit with cosine undefined -> the key is ABSENT (never 0, per the contract)', () => {
+    const dto = serializeProjection(makeProjection({ results: [makeRankedChunk()] }))
+    const first = dto.results[0] as unknown as Record<string, unknown>
+    expect('cosine' in first).toBe(false)
+  })
 })

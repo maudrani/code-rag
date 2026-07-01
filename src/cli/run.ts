@@ -33,7 +33,8 @@ usage:
 
 flags:
   --dry          deterministic retrieval only — no LLM, no cost, no API key
-  --json         emit as JSON (pipeable) — byte-identical to the MCP + HTTP surfaces
+  --json         emit as JSON (pipeable) — the same shape the MCP tools return; the
+                 stats/health/log surfaces are byte-identical across CLI, MCP, and HTTP
   -h, --help     show this help
   -V, --version  show the version
 `
