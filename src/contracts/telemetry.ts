@@ -65,6 +65,12 @@ export interface QueryLogEntry {
    *  for back-compat with pre-FTR-3 ledger lines that predate these fields (FTR-3 P1). */
   tier?: 'cheap' | 'strong'
   model?: string
+  /** the L5 outcome, joined by queryId when the answer completes (FTR-3 P2). `answered` is false for
+   *  a refused query (band refuse, zero cost) and UNDEFINED for a search-only query that never invoked
+   *  answer(); tokens + estCost mirror AnswerTelemetry (the L5 SSOT). */
+  answered?: boolean
+  tokens?: number
+  estCost?: number
   latencyMs: number
 }
 

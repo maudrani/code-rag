@@ -34,6 +34,10 @@ describe('membrane: QueryLogEntry carries the gate routing decision (FTR-3 P1)',
     // non-vacuous: they are actually populated (a real tier + a real model id).
     expect(entry.tier).toBeDefined()
     expect(entry.model).toBeTruthy()
+    // FTR-3 P2: query() alone (no answer() call) is search-only -> the LLM never ran, no outcome.
+    expect(entry.answered).toBeUndefined()
+    expect(entry.tokens).toBeUndefined()
+    expect(entry.estCost).toBeUndefined()
   })
 
   it('EDGE: a REFUSED query still records tier + model (the gate computes them regardless of band)', async () => {
@@ -49,5 +53,30 @@ describe('membrane: QueryLogEntry carries the gate routing decision (FTR-3 P1)',
     expect(entry.tier).toBe(projection.decision.tier)
     expect(entry.model).toBe(projection.decision.model)
     expect(entry.tier).toBeDefined()
+    // FTR-3 P2: a refused query records the ZERO-COST outcome (the "refused -> $0 spent" story).
+    expect(entry.answered).toBe(false)
+    expect(entry.tokens).toBe(0)
+    expect(entry.estCost).toBe(0)
+  })
+
+  it('P2: the L5 outcome attaches by queryId, and does not leak onto another entry', async () => {
+    corpus = mkdtempSync(join(tmpdir(), 'qle-key-'))
+    writeFileSync(join(corpus, 'greet.ts'), 'export function greet(): number {\n  return 1\n}\n')
+    const engine = createEngine({ corpusPath: corpus })
+
+    const refused = await engine.query('xyzzy plugh frobnicate quux', [], 'package') // refuse -> outcome set
+    const grounded = await engine.query('how does greet work', [], 'package') // answer, search-only -> none
+
+    const log = engine.queryLog()
+    const refusedEntry = log.find((e) => e.queryId === refused.queryId)
+    const groundedEntry = log.find((e) => e.queryId === grounded.queryId)
+    if (!refusedEntry || !groundedEntry) throw new Error('expected both ledger entries')
+
+    // the refuse outcome is on ITS entry only...
+    expect(refusedEntry.answered).toBe(false)
+    expect(refusedEntry.estCost).toBe(0)
+    // ...and never leaks onto the search-only entry (no answer() call -> no outcome).
+    expect(groundedEntry.answered).toBeUndefined()
+    expect(groundedEntry.estCost).toBeUndefined()
   })
 })

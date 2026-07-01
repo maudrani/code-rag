@@ -88,7 +88,9 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
   let chunkTelemetry: ChunkTelemetry | null = null
   let indexBuiltAt: number | null = null
   const ledger: QueryLogEntry[] = []
-  let lastAnswer: { queryId: string; telemetry: AnswerTelemetry } | null = null
+  // FTR-3 P2: the L5 outcome keyed by queryId (generalizes the old single lastAnswer slot). Joined
+  // onto ledger entries at read time, so it survives past the most-recent query (append-only kept).
+  const answerByQueryId = new Map<string, AnswerTelemetry>()
 
   // Ring buffer of events per queryId. The membrane subscribes to its OWN bus at construction,
   // so every event is captured from L0 onward; a client that subscribes LATE (after L0–L4 have
@@ -251,7 +253,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     // Record the ZERO-COST AnswerTelemetry HERE (no usage -> tokens/estCost 0) so telemetry()
     // surfaces the refuse instead of null. Keyed by queryId, identical to the answered path.
     if (projection.decision.band === 'refuse') {
-      lastAnswer = { queryId, telemetry: buildAnswerTelemetry(projection.decision) }
+      answerByQueryId.set(queryId, buildAnswerTelemetry(projection.decision))
     }
     return projection
   }
@@ -277,7 +279,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
         })
         // Hold the L5 telemetry for telemetry().lastQuery.answer — keyed by queryId so it
         // only attaches to ITS query (a later answer-less query reads null, not this).
-        lastAnswer = { queryId: projection.queryId, telemetry }
+        answerByQueryId.set(projection.queryId, telemetry)
       }
       yield chunk
     }
@@ -306,11 +308,8 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
         ? null
         : {
             retrieve: lastEntry,
-            // attach the L5 telemetry ONLY when it belongs to this same query.
-            answer:
-              lastAnswer !== null && lastAnswer.queryId === lastEntry.queryId
-                ? lastAnswer.telemetry
-                : null,
+            // attach the L5 telemetry ONLY when it belongs to this same query (keyed by queryId).
+            answer: answerByQueryId.get(lastEntry.queryId) ?? null,
           }
     // ingest + chunk are the held collectIngestTelemetry / collectChunkTelemetry outputs (L1/L2).
     return { ingest: ingestTelemetry, chunk: chunkTelemetry, index, lastQuery }
@@ -334,13 +333,23 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     return buf === undefined ? [] : [...buf] // defensive copy
   }
 
-  // The cross-consumer ledger, newest-first; filtered by consumer, limited by limit.
+  // FTR-3 P2: join the L5 outcome (answered/tokens/estCost) onto an entry by queryId. Read-time only
+  // — the stored entry stays append-only. answered = the outcome band is 'answer' (a refuse -> false,
+  // zero cost); a search-only query has no outcome entry, so the fields stay undefined.
+  function withAnswerOutcome(e: QueryLogEntry): QueryLogEntry {
+    const a = answerByQueryId.get(e.queryId)
+    if (a === undefined) return e
+    return { ...e, answered: a.band === 'answer', tokens: a.tokens, estCost: a.estCost }
+  }
+
+  // The cross-consumer ledger, newest-first; filtered by consumer, limited by limit; each entry
+  // joined with its L5 outcome (FTR-3 P2).
   function queryLog(opts?: { consumer?: Consumer; limit?: number }): QueryLogEntry[] {
     let entries = [...ledger].reverse()
     const consumer = opts?.consumer
     if (consumer !== undefined) entries = entries.filter((e) => e.consumer === consumer)
     if (opts?.limit !== undefined) entries = entries.slice(0, opts.limit)
-    return entries
+    return entries.map(withAnswerOutcome)
   }
 
   // The corpus symbol read-surface — ensures the index, then projects each chunk to its identity.
