@@ -23,6 +23,12 @@ export interface EngineConfig {
    * suite). First live use downloads the MiniLM model (~25MB); set `false` for instant fully-offline.
    */
   dense?: boolean
+  /**
+   * persist the index at this path for warm-restart (FTR-57): a second run stat-checks each file
+   * (mtime+size) and re-embeds ONLY changed files — the whole-repo cold embed (minutes) drops to
+   * ~seconds warm. Absent → an in-memory index (always cold). A model-id change forces a cold rebuild.
+   */
+  indexPath?: string
 }
 
 /**
