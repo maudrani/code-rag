@@ -28,7 +28,7 @@ That gives a pipeline that runs left-to-right from fully deterministic to probab
    (+rewrite)             sitter     (1 SQLite)    parallel    gate       LLM call)
 ```
 
-Everything up to L5 is exact and tested (427 tests). **L5 is the only place a model
+Everything up to L5 is exact and tested (649 tests). **L5 is the only place a model
 runs**, and even there a deterministic score-gate decides *whether* it runs at all and
 *which* model. The payoff: answers are reproducible up to the generation step,
 ungrounded questions are refused instead of hallucinated, and every query emits a
@@ -180,7 +180,7 @@ shows the per-leg scores. The whole pipeline is also usable in-process via the p
 ## Engineering standards
 
 - **TypeScript strict**, **Biome** (lint + format), **vitest** (TDD, red→green).
-  **427 tests**; the critical paths — membrane, retrieval fusion, the score-gate, the
+  **649 tests**; the critical paths — membrane, retrieval fusion, the score-gate, the
   guardrails, the wire — get edge + negative coverage.
 - **CI** gates the backend (Biome + tsc + vitest) and the web build, on every push.
 - **A commit pipeline built for AI-authored commits** (husky + commitlint + Biome on
@@ -239,8 +239,12 @@ history stays a clean, attributed, per-layer narrative.
 - **Grounding is lexical** — the next precision lever is a raw-cosine or cross-encoder
   **reranker** signal applied after fusion on the top-K (the dogfood showed RRF ranks
   can't ground).
-- **Productionise the embedder out-of-process** — `onnxruntime-node` can abort the host
-  process, so the local embedder belongs in a child process, not in-band.
+- **Embedder exits cleanly** (resolved) — `onnxruntime-node` ≤1.21 aborts the host process on
+  teardown on macOS (`libc++abi: mutex lock failed`, exit 134 — `onnxruntime#24579`, fixed upstream
+  by PR#26445). `@huggingface/transformers` pins it to 1.21.0, so the build overrides it to ≥1.24.3
+  and the in-process dense embedder exits `0`. The `Embedder` interface stays the isolation seam if a
+  consumer ever needs hard out-of-process fault-isolation (worker threads don't isolate a native abort;
+  only a child process does).
 - **FTS5 morphology** — Porter stemming so `upsert` / `upserted` match lexically.
 
 ## License
