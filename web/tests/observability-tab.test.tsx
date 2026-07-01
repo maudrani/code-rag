@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ObservabilityTab } from '../src/components/observability/ObservabilityTab'
 import type { EngineTelemetry } from '../src/contract'
@@ -39,27 +40,27 @@ function stubTelemetryFetch(routes: { stats?: RouteReply; health?: RouteReply })
 }
 
 describe('ObservabilityTab', () => {
-  it('renders per-layer telemetry from /stats (L1→L5 cards)', async () => {
+  it('renders per-layer telemetry from /stats (L1→L5 cards, via sub-tabs)', async () => {
     stubTelemetryFetch({ stats: { body: statsFixture }, health: { body: healthFixture } })
+    const user = userEvent.setup()
     render(<ObservabilityTab />)
 
+    // the default sub-tab (L1 Ingest) shows its telemetry
     const ingest = await screen.findByRole('region', { name: /ingest/i })
     expect(within(ingest).getByText(/198 \/ 214/)).toBeInTheDocument()
 
-    const index = screen.getByRole('region', { name: /index/i })
+    // navigating to another layer's sub-tab surfaces that layer's telemetry
+    await user.click(screen.getByRole('tab', { name: /index/i }))
+    const index = await screen.findByRole('region', { name: /index/i })
     expect(within(index).getByText('in-memory')).toBeInTheDocument()
 
-    const answer = screen.getByRole('region', { name: /answer/i })
+    await user.click(screen.getByRole('tab', { name: /answer/i }))
+    const answer = await screen.findByRole('region', { name: /answer/i })
     expect(within(answer).getByText('claude-opus-4-8')).toBeInTheDocument()
     expect(within(answer).getByText('$0.00026')).toBeInTheDocument()
-
-    // every layer is present as a landmark
-    for (const name of [/chunk/i, /retrieve/i]) {
-      expect(screen.getByRole('region', { name })).toBeInTheDocument()
-    }
   })
 
-  it('renders the health status and per-check pass/fail from /health', async () => {
+  it('renders the health status and per-check pass/fail from /health (always visible)', async () => {
     stubTelemetryFetch({ stats: { body: statsFixture }, health: { body: healthFixture } })
     render(<ObservabilityTab />)
 
@@ -72,28 +73,43 @@ describe('ObservabilityTab', () => {
 
   it('renders the L4 per-leg scores (bm25/dense/structural) — dense is live (non-zero)', async () => {
     stubTelemetryFetch({ stats: { body: statsFixture }, health: { body: healthFixture } })
+    const user = userEvent.setup()
     render(<ObservabilityTab />)
 
+    await user.click(await screen.findByRole('tab', { name: /retrieve/i }))
     const retrieve = await screen.findByRole('region', { name: /retrieve/i })
     expect(within(retrieve).getByText('bm25')).toBeInTheDocument()
     expect(within(retrieve).getByText('dense')).toBeInTheDocument()
     expect(within(retrieve).getByText('structural')).toBeInTheDocument()
-    // the dense contribution is surfaced as a concrete, non-zero score (FTR-53 made visible)
+    // the dense contribution is a concrete, non-zero score (FTR-53 made visible)
     expect(within(retrieve).getByText('0.0231')).toBeInTheDocument()
+  })
+
+  it('shows the per-layer CLI command an agent would run (CLI/MCP/HTTP parity)', async () => {
+    stubTelemetryFetch({ stats: { body: statsFixture }, health: { body: healthFixture } })
+    const user = userEvent.setup()
+    render(<ObservabilityTab />)
+
+    // the default (ingest) sub-tab shows its command
+    expect(await screen.findByText(/code-rag stats --layer ingest/)).toBeInTheDocument()
+    // and each layer shows ITS command
+    await user.click(screen.getByRole('tab', { name: /retrieve/i }))
+    expect(await screen.findByText(/code-rag stats --layer retrieve/)).toBeInTheDocument()
   })
 
   it('renders an empty state when there is no last query (null lastQuery)', async () => {
     const cold: EngineTelemetry = { ...statsFixture, lastQuery: null }
     stubTelemetryFetch({ stats: { body: cold }, health: { body: healthFixture } })
+    const user = userEvent.setup()
     render(<ObservabilityTab />)
 
-    const retrieve = await screen.findByRole('region', { name: /retrieve/i })
-    expect(within(retrieve).getByText(/no query yet/i)).toBeInTheDocument()
-    const answer = screen.getByRole('region', { name: /answer/i })
-    expect(within(answer).getByText(/no answer yet/i)).toBeInTheDocument()
+    await user.click(await screen.findByRole('tab', { name: /retrieve/i }))
+    expect(await screen.findByText(/no query yet/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: /answer/i }))
+    expect(await screen.findByText(/no answer yet/i)).toBeInTheDocument()
   })
 
-  it('renders an error state with retry when /stats fails (and NOT the cards)', async () => {
+  it('renders an error state with retry when /stats fails (and NOT the layer tabs)', async () => {
     stubTelemetryFetch({
       stats: { body: { error: 'boom' }, status: 500 },
       health: { body: healthFixture },
@@ -101,10 +117,11 @@ describe('ObservabilityTab', () => {
     render(<ObservabilityTab />)
 
     // the stats error region + a Retry control
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(/load telemetry/i)
-    expect(within(alert).getByRole('button', { name: /retry/i })).toBeInTheDocument()
-    // branch assertion (non-vacuous): the error path must NOT render the layer cards
+    const alert = await screen.findByText(/load telemetry/i)
+    expect(alert).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+    // branch assertion (non-vacuous): the error path renders NO layer tabs and NO layer cards
+    expect(screen.queryByRole('tab')).toBeNull()
     expect(screen.queryByRole('region', { name: /ingest/i })).toBeNull()
   })
 

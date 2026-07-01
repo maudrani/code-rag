@@ -2,20 +2,23 @@ import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { fetchHealth, fetchStats } from '../../clients/telemetryClient'
 import { usePoll } from '../../clients/usePoll'
 import { HealthCard } from './HealthCard'
-import { AnswerCard, ChunkCard, IndexCard, IngestCard, RetrieveCard } from './LayerCards'
+import { LayerDetail } from './LayerDetail'
+import { LAYERS } from './layerContent'
 
 /** Live poll cadence — fast enough to feel live in the demo, gentle on the deterministic surface. */
 const POLL_MS = 5000
 
 /**
- * ObservabilityTab (FTR-56 Phase 2) — the demo wow. Surfaces the full L0->L5 telemetry the backend
- * already exposes (GET /stats + /health) but the UI hid. Live-polled via usePoll; EVERY state is
- * handled (loading -> skeletons, first-load error -> message + Retry, empty layers -> per-card empty
- * states, healthy -> the grid). Health and stats poll independently so one failing does not blank the
- * other. Web ⊥ Node: consumes the HTTP wire only.
+ * ObservabilityTab (FTR-56 P2 + P3) — the demo wow. Surfaces the full L0→L5 telemetry the backend
+ * already exposes (GET /stats + /health). The aggregate HEALTH card stays always-visible; the five
+ * per-layer views live in their own sub-tabs (operator feedback: don't cram every layer into one
+ * pane — give each room to breathe with descriptions + the per-layer agent CLI command). Live-polled
+ * via usePoll; every state handled (loading → skeletons, first-load error → message + Retry, empty
+ * layers → per-card empty states). Web ⊥ Node: consumes the HTTP wire only.
  */
 export function ObservabilityTab({ baseUrl = '' }: { baseUrl?: string }) {
   const statsFetcher = useCallback(() => fetchStats(baseUrl), [baseUrl])
@@ -43,6 +46,7 @@ export function ObservabilityTab({ baseUrl = '' }: { baseUrl?: string }) {
         </Button>
       </div>
 
+      {/* Aggregate health — always visible (the summary you never want hidden behind a tab). */}
       <div className="mb-4">
         {health.loading && !health.data ? (
           <Skeleton className="h-32 w-full" role="status" aria-label="Loading health" />
@@ -63,14 +67,9 @@ export function ObservabilityTab({ baseUrl = '' }: { baseUrl?: string }) {
       </div>
 
       {stats.loading && !stats.data ? (
-        <div
-          role="status"
-          aria-label="Loading telemetry"
-          className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
-        >
-          {[0, 1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-44 w-full" />
-          ))}
+        <div role="status" aria-label="Loading telemetry" className="flex flex-col gap-3">
+          <Skeleton className="h-9 w-full max-w-md" />
+          <Skeleton className="h-56 w-full" />
         </div>
       ) : stats.error && !stats.data ? (
         <div
@@ -86,13 +85,23 @@ export function ObservabilityTab({ baseUrl = '' }: { baseUrl?: string }) {
           </Button>
         </div>
       ) : stats.data ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <IngestCard data={stats.data.ingest} />
-          <ChunkCard data={stats.data.chunk} />
-          <IndexCard data={stats.data.index} />
-          <RetrieveCard entry={stats.data.lastQuery?.retrieve ?? null} />
-          <AnswerCard data={stats.data.lastQuery?.answer ?? null} />
-        </div>
+        <Tabs defaultValue="ingest" orientation="vertical" className="items-start">
+          <TabsList variant="line" className="shrink-0">
+            {LAYERS.map((l) => (
+              <TabsTrigger key={l.key} value={l.key} className="justify-start">
+                <span className="font-mono text-xs text-muted-foreground">{l.label}</span>
+                {l.title}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <div className="min-w-0 flex-1">
+            {LAYERS.map((l) => (
+              <TabsContent key={l.key} value={l.key}>
+                {stats.data ? <LayerDetail layer={l} stats={stats.data} /> : null}
+              </TabsContent>
+            ))}
+          </div>
+        </Tabs>
       ) : null}
     </section>
   )

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTraceSocket } from './clients/useTraceSocket'
 import { ChatView } from './components/ChatView'
 import { ManualSearchTab } from './components/ManualSearchTab'
+import { MockDataBanner } from './components/MockDataBanner'
 import { ObservabilityTab } from './components/observability/ObservabilityTab'
 import { TracePanel } from './components/TracePanel'
 import { API_BASE, WS_BASE } from './lib/config'
@@ -21,6 +22,7 @@ export function App() {
 
   return (
     <main>
+      <MockDataBanner />
       <header className="app__header">
         <h1 className="app__title">
           <span>code-rag</span> — ask the codebase

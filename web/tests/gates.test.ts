@@ -103,6 +103,21 @@ const FRONTEND_GATES: Gate[] = [
     layer: 'frontend',
     gateTest: 'web/tests/telemetry-client.test.ts::returns the down report on 503',
   },
+  {
+    id: 'frontend.mock-indicator',
+    claim:
+      'when the dev MOCK wire is active an unmissable "MOCK DATA" banner renders so a mock is never mistaken for a live backend',
+    layer: 'frontend',
+    gateTest:
+      'web/tests/mock-data-banner.test.tsx::renders an unmissable MOCK DATA warning when active',
+  },
+  {
+    id: 'frontend.cli-parity',
+    claim:
+      'each per-layer sub-tab shows the exact CLI command an agent would run (code-rag stats --layer X) — the CLI/MCP/HTTP parity thesis made visible',
+    layer: 'frontend',
+    gateTest: 'web/tests/observability-tab.test.tsx::shows the per-layer CLI command',
+  },
 ]
 
 // gateTest files are repo-root-relative (e.g. 'web/tests/x'); web's vitest cwd is web/, so strip

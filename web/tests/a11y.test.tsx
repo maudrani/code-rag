@@ -50,7 +50,7 @@ describe('accessibility', () => {
 })
 
 describe('accessibility — Observability tab', () => {
-  it('exposes each telemetry layer as a named region landmark + a labelled refresh control', async () => {
+  it('exposes the layers as a keyboard tablist + named region landmarks + a labelled refresh', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: unknown) => {
@@ -64,12 +64,16 @@ describe('accessibility — Observability tab', () => {
     )
     render(<ObservabilityTab />)
 
-    // each layer is reachable as a landmark with an accessible name (screen-reader navigable)
-    expect(await screen.findByRole('region', { name: /ingest/i })).toBeInTheDocument()
-    for (const name of [/chunk/i, /index/i, /retrieve/i, /answer/i, /health/i]) {
-      expect(screen.getByRole('region', { name })).toBeInTheDocument()
+    // the aggregate health + the default layer are landmarks with accessible names
+    expect(await screen.findByRole('region', { name: /health/i })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /ingest/i })).toBeInTheDocument()
+
+    // the five layers are a proper ARIA tablist (keyboard-navigable roving tabs)
+    expect(screen.getByRole('tablist')).toBeInTheDocument()
+    for (const name of [/ingest/i, /chunk/i, /index/i, /retrieve/i, /answer/i]) {
+      expect(screen.getByRole('tab', { name })).toBeInTheDocument()
     }
-    // the refresh action is a real, named button (keyboard-reachable)
+    // the refresh action is a real, named button
     expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()
   })
 })
