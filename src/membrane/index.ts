@@ -7,7 +7,7 @@ import {
   ingestAndChunk,
   initParser,
 } from '../chunk/index.js'
-import type { SymbolEntry } from '../contracts/chunk.js'
+import type { Chunk, SymbolEntry } from '../contracts/chunk.js'
 import type {
   AnswerChunk,
   AnswerTelemetry,
@@ -31,8 +31,14 @@ import type {
   Unsubscribe,
 } from '../contracts/index.js'
 import { buildIndexedStore } from '../index/build.js'
-import { createOnnxEmbedder, type Embedder } from '../index/embed.js'
-import type { SqliteStore } from '../index/store.js'
+import {
+  createOnnxEmbedder,
+  DEFAULT_EMBED_DTYPE,
+  DEFAULT_EMBED_MODEL,
+  type Embedder,
+} from '../index/embed.js'
+import { statFiles } from '../index/manifest.js'
+import { type ChunkChanged, SqliteStore } from '../index/store.js'
 import { createClaudeProvider } from '../provider/claude.js'
 import { type RetrieveDeps, retrieve } from '../retrieve/retrieve.js'
 import { topScoresByLeg } from '../retrieve/telemetry.js'
@@ -49,6 +55,9 @@ import { needsRewrite } from './resolve.js'
 
 const DEFAULT_CORPUS = '.'
 const TOP_K = 10
+
+/** The embedder identity persisted in the warm-restart manifest — a change forces a cold rebuild. */
+const EMBED_MODEL_ID = `${DEFAULT_EMBED_MODEL}:${DEFAULT_EMBED_DTYPE}`
 
 /** Events buffered per queryId before the oldest is evicted (the replay backlog cap). */
 const REPLAY_CAP = 50
@@ -112,9 +121,29 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     const denseOn = config.dense ?? process.env.VITEST === undefined
     const embedder = denseOn ? createOnnxEmbedder() : undefined
     embedderHandle = embedder ?? null
-    const built = await buildIndexedStore(chunks, embedder ? { embedder } : {})
-    storeHandle = built.store
-    deps = built.deps
+    if (config.indexPath) {
+      // Warm-restart (FTR-57): persist at indexPath + stat-check; re-embed ONLY changed files. `files`
+      // and chunk.path are the SAME root-relative form (ingestAndChunk), so the byPath lookup is exact.
+      const store = new SqliteStore({ path: config.indexPath })
+      const current = await statFiles(files, repoPath)
+      const byPath = new Map<string, Chunk[]>()
+      for (const c of chunks) {
+        const arr = byPath.get(c.path)
+        if (arr) arr.push(c)
+        else byPath.set(c.path, [c])
+      }
+      const chunkChanged: ChunkChanged = (paths) => paths.flatMap((p) => byPath.get(p) ?? [])
+      await store.syncIndex(current, chunkChanged, {
+        modelId: EMBED_MODEL_ID,
+        ...(embedder ? { embedder } : {}),
+      })
+      storeHandle = store
+      deps = store.retrievalDeps(embedder)
+    } else {
+      const built = await buildIndexedStore(chunks, embedder ? { embedder } : {})
+      storeHandle = built.store
+      deps = built.deps
+    }
     ingestStats = { filesIndexed: files.length, chunks: chunks.length }
 
     // Hold the per-layer telemetry the Observable surface reads, via the specialists' pure
