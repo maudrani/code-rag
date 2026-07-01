@@ -1,3 +1,4 @@
+import type { SymbolEntry } from '../../../src/contracts/chunk.js'
 import type { Engine, IngestReport, Unsubscribe } from '../../../src/contracts/engine.js'
 import type { Event } from '../../../src/contracts/events.js'
 import type { ConsumerIntent, Projection, Turn } from '../../../src/contracts/projection.js'
@@ -135,6 +136,22 @@ export function makeMockEngine(config: MockEngineConfig = {}): Engine & Observab
     telemetry: () => telemetry,
     health: () => health,
     replay: (queryId: string): Event[] => (config.replay ? config.replay(queryId) : []),
+    symbols: async (): Promise<SymbolEntry[]> => [
+      {
+        path: 'engine.ts',
+        symbol: 'EngineConfig',
+        kind: 'other',
+        lang: 'typescript',
+        span: { startLine: 15, endLine: 26 },
+      },
+      {
+        path: 'membrane/index.ts',
+        symbol: 'createEngine',
+        kind: 'function',
+        lang: 'typescript',
+        span: { startLine: 60, endLine: 320 },
+      },
+    ],
     queryLog(opts?: { consumer?: Consumer; limit?: number }): QueryLogEntry[] {
       let entries = [...ledger]
       if (opts?.consumer !== undefined)

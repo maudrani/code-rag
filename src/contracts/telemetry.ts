@@ -1,3 +1,4 @@
+import type { SymbolEntry } from './chunk.js'
 import type { Event } from './events.js'
 
 /**
@@ -128,4 +129,7 @@ export interface Observable {
   replay(queryId: string): Event[]
   /** the cross-consumer ledger — every query from every consumer, newest first. */
   queryLog(opts?: { consumer?: Consumer; limit?: number }): QueryLogEntry[]
+  /** the corpus symbol read-surface (path/symbol/kind/lang/span); indexes on first call. Feeds
+   *  `/symbols` (autocomplete + corpus tree) — the fifth read-surface, one per consumer. */
+  symbols(): Promise<SymbolEntry[]>
 }

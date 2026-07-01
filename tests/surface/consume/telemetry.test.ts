@@ -74,6 +74,7 @@ function stubObservable(over: Partial<Observable> = {}): Observable {
     health: vi.fn(() => HEALTH),
     replay: vi.fn((_: string): Event[] => []),
     queryLog: vi.fn((_?: { consumer?: Consumer; limit?: number }) => LEDGER),
+    symbols: vi.fn(async () => []),
     ...over,
   }
 }

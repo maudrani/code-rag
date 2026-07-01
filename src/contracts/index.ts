@@ -7,7 +7,7 @@
  *   provider   -> ADR-005               wire     -> ADR-008
  *   engine     -> ADR-006 (Consumer API #6)
  */
-export type { Chunk } from './chunk.js'
+export type { Chunk, SymbolEntry } from './chunk.js'
 export type { CreateEngine, Engine, EngineConfig, IngestReport, Unsubscribe } from './engine.js'
 export type { EmitFn, Event, EventLayer } from './events.js'
 export type {

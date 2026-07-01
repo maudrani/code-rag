@@ -7,6 +7,7 @@ import {
   ingestAndChunk,
   initParser,
 } from '../chunk/index.js'
+import type { SymbolEntry } from '../contracts/chunk.js'
 import type {
   AnswerChunk,
   AnswerTelemetry,
@@ -310,5 +311,17 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     return entries
   }
 
-  return { ingest, query, answer, on, telemetry, health, replay, queryLog }
+  // The corpus symbol read-surface — ensures the index, then projects each chunk to its identity.
+  async function symbols(): Promise<SymbolEntry[]> {
+    const ready = await ensureIndexed()
+    return [...ready.chunks.values()].map((c) => ({
+      path: c.path,
+      symbol: c.symbol,
+      kind: c.kind,
+      lang: c.lang,
+      span: c.span,
+    }))
+  }
+
+  return { ingest, query, answer, on, telemetry, health, replay, queryLog, symbols }
 }
