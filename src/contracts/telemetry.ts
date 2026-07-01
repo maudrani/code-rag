@@ -60,6 +60,11 @@ export interface QueryLogEntry {
   /** top fused contribution per leg — the per-leg breakdown a specialist reviews. */
   scoresByLeg: Record<Leg, number>
   band: 'refuse' | 'answer'
+  /** the gate's routing decision for this query: the tier + the model id that would serve
+   *  (or did serve) L5. Populated at L4 from the gate decision (the SSOT, RULE-019); OPTIONAL
+   *  for back-compat with pre-FTR-3 ledger lines that predate these fields (FTR-3 P1). */
+  tier?: 'cheap' | 'strong'
+  model?: string
   latencyMs: number
 }
 

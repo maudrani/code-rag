@@ -240,6 +240,9 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
       resultCount: results.length,
       scoresByLeg,
       band: projection.decision.band,
+      // FTR-3 P1: the routing decision, per query (from the gate SSOT; reused, not re-derived).
+      tier: projection.decision.tier,
+      model: projection.decision.model,
       latencyMs: Date.now() - queryStart,
     })
 
