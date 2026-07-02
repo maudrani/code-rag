@@ -22,6 +22,7 @@ export {
   resolveLedgerPath,
   withLedger,
 } from './ledger.js'
+export { isDirectRun } from './mainModule.js'
 export type { ProjectionDTO, SerializedResult } from './serialize.js'
 export { serializeProjection } from './serialize.js'
 export type {

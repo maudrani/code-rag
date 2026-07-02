@@ -1,6 +1,5 @@
-import { pathToFileURL } from 'node:url'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { buildEngine, resolveCorpusSource } from '../consume/index.js'
+import { buildEngine, isDirectRun, resolveCorpusSource } from '../consume/index.js'
 import { buildMcpServer } from './server.js'
 
 /** An idempotent stdio shutdown handler (close the server, then exit). Exported for testing. */
@@ -39,10 +38,9 @@ export async function startMcpServer(): Promise<void> {
   process.stderr.write('code-rag MCP server running on stdio\n')
 }
 
-// Import-safe: open stdio only when executed directly (`node dist/src/mcp/serve.js`),
-// never on import (keeps tests + tooling side-effect free).
-const invokedPath = process.argv[1]
-if (invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).href) {
+// Import-safe: open stdio only when executed directly (`node dist/…`, the linked bin, etc.),
+// never on import (keeps tests + tooling side-effect free) — realpath-safe guard (TKT-447).
+if (isDirectRun(process.argv[1], import.meta.url)) {
   startMcpServer().catch((err: unknown) => {
     process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`)
     process.exit(1)

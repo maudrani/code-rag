@@ -1,6 +1,10 @@
-import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
-import { buildEngine, resolveCorpusSource, resolveLedgerPath } from '../consume/index.js'
+import {
+  buildEngine,
+  isDirectRun,
+  resolveCorpusSource,
+  resolveLedgerPath,
+} from '../consume/index.js'
 import { buildApp, resolvePort } from './app.js'
 
 /** Anything with a Node-style `close(callback)` — the @hono/node-server instance. */
@@ -47,9 +51,9 @@ export async function startServer(port: number = resolvePort(process.env.PORT)) 
   return server
 }
 
-// Import-safe: only auto-start when this module is executed directly
-// (`node dist/http/server.js`), never on import (keeps tests/tooling side-effect free).
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Import-safe: only auto-start when this module is executed directly (`node dist/…`, the linked
+// bin, etc.), never on import (keeps tests/tooling side-effect free) — realpath-safe guard (TKT-447).
+if (isDirectRun(process.argv[1], import.meta.url)) {
   startServer().catch((err: unknown) => {
     process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`)
     process.exit(1)
