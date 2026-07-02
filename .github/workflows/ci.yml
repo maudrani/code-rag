@@ -22,6 +22,10 @@ jobs:
         run: npm run typecheck
       - name: Test
         run: npm run test
+      - name: Run-it smoke (built CLI works out-of-box, FTR-4 TKT-006)
+        run: |
+          npm run build
+          node dist/src/cli/index.js --help | grep -q "usage:"
 
   web:
     runs-on: ubuntu-latest
