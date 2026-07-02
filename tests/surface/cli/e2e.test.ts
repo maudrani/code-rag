@@ -69,4 +69,22 @@ describe('CLI e2e (real subprocess via tsx) — TKT-412', () => {
       rmSync(linkDir, { recursive: true, force: true })
     }
   }, 30000)
+
+  it('stats --json on a one-shot process reports REAL non-null telemetry, no ONNX (TKT-449)', () => {
+    // I-9: a fresh `code-rag stats` never built the index, so ingest/chunk/index were null. The
+    // read-surfaces now build dense-off (no model download / no ONNX) and force the index, so the
+    // $0 read returns real counts. NO ANTHROPIC_API_KEY — a telemetry read needs no key.
+    const res = runCli(['stats', '--json'], {
+      CORPUS_PATH: corpusDir,
+      ANTHROPIC_API_KEY: undefined,
+    })
+    expect(res.status).toBe(0)
+    const t = JSON.parse(res.stdout.trim()) as {
+      index: { docs: number } | null
+      chunk: { count: number } | null
+    }
+    expect(t.index).not.toBeNull() // was null (cold per-process telemetry)
+    expect(t.index?.docs).toBeGreaterThan(0)
+    expect(t.chunk?.count).toBeGreaterThan(0)
+  }, 30000)
 })

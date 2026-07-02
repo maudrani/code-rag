@@ -134,7 +134,9 @@ describe('run — TKT-411', () => {
       stderr: cap.stderr,
       env: {}, // no CODE_RAG_REPO → the real resolveCorpusSource returns undefined (never clones)
     })
-    expect(received).toBeUndefined()
+    // a read-surface (symbols) builds DENSE-OFF (TKT-449); the invariant here is NO corpusPath override.
+    expect(received?.corpusPath).toBeUndefined()
+    expect(received?.dense).toBe(false)
   })
 
   it('NEGATIVE: unknown command -> EXIT.USAGE, message to STDERR (stdout stays clean)', async () => {

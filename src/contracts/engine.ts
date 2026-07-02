@@ -49,7 +49,9 @@ export interface EngineConfig {
  * a dry CLI call / `mcp` can call `query` alone (no LLM, no cost).
  */
 export interface Engine {
-  ingest(repoPath: string): Promise<IngestReport>
+  /** index a corpus; `repoPath` defaults to the engine's configured corpus (ADR-006 G6). A read
+   *  surface (stats/health) can call it to force the index so its telemetry is populated (TKT-449). */
+  ingest(repoPath?: string): Promise<IngestReport>
   /** FTR-5 P4: rebuild the in-memory index over a NEW local corpus and make it the active one.
    *  Build-then-swap: the new index is built off to the side, then installed atomically, so a failed
    *  rebuild keeps the previous corpus (no empty-index window). Local path only (the clone is the

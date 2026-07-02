@@ -95,16 +95,24 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
     const engineConfig: EngineConfig | undefined =
       repoCorpus !== undefined ? { corpusPath: repoCorpus } : undefined
     const makeEngine = (): Engine & Observable => buildEngineFn(engineConfig)
+    // The telemetry read-surfaces (stats/health/symbols/log) never need the dense retrieval leg, so
+    // build them DENSE-OFF: a one-shot read is fast + heat-free (no ONNX / no ~25MB model download)
+    // and reports the SAME real counts (TKT-448/449). `ask` keeps the resolved dense.
+    const makeReadEngine = (): Engine & Observable =>
+      buildEngineFn({ ...engineConfig, dense: false })
 
     // ─── telemetry read-surfaces (no LLM, no key) ───────────────────────────────
     if (cmd.command === 'stats') {
-      const engine = makeEngine()
+      const engine = makeReadEngine()
+      await engine.ingest() // TKT-449: build the index so a one-shot stats reports real numbers, not null
       const payload = cmd.layer === undefined ? getStats(engine) : getStats(engine, cmd.layer)
       deps.stdout.write(cmd.json ? `${telemetryJson(payload)}\n` : humanStats(payload))
       return EXIT.OK
     }
     if (cmd.command === 'health') {
-      const report = getHealth(makeEngine())
+      const engine = makeReadEngine()
+      await engine.ingest() // TKT-449: index built → health reports the true status, not a cold 'degraded'
+      const report = getHealth(engine)
       deps.stdout.write(cmd.json ? `${telemetryJson(report)}\n` : humanHealth(report, useColor))
       // 'down' is the only non-zero exit (per the telemetry.ts contract); 'degraded' warns, exits 0.
       return report.status === 'down' ? EXIT.ERROR : EXIT.OK
@@ -118,13 +126,13 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
       // this process's in-memory ledger. Both render as { entries } (the parity wire shape).
       const ledgerPath = resolveLedgerPath(deps.env)
       const entries =
-        ledgerPath !== undefined ? readLedger(ledgerPath, opts) : getLog(makeEngine(), opts)
+        ledgerPath !== undefined ? readLedger(ledgerPath, opts) : getLog(makeReadEngine(), opts)
       deps.stdout.write(cmd.json ? `${telemetryJson({ entries })}\n` : humanLog(entries, useColor))
       return EXIT.OK
     }
     if (cmd.command === 'symbols') {
       // Read-only, no LLM, no key. Async: the engine ensures the index then projects its chunks.
-      const payload = await getSymbolsPayload(makeEngine())
+      const payload = await getSymbolsPayload(makeReadEngine())
       deps.stdout.write(
         cmd.json ? `${telemetryJson(payload)}\n` : humanSymbols(payload.symbols, useColor),
       )

@@ -105,7 +105,7 @@ export function makeMockEngine(config: MockEngineConfig = {}): Engine & Observab
   }
 
   return {
-    async ingest(_repoPath: string): Promise<IngestReport> {
+    async ingest(_repoPath?: string): Promise<IngestReport> {
       return { filesIndexed: 1, chunks: 1, durationMs: 0 }
     },
 
