@@ -5,7 +5,12 @@ import type { MinimalEventSource } from '../src/clients/ledgerStream'
 import { LiveListenerTab } from '../src/components/LiveListenerTab'
 import type { QueryLogEntry } from '../src/contract'
 import { CARD_SURFACE, OUTCOME_TONES } from '../src/lib/badgeTones'
-import { assertContrastAA } from './_ui-verify'
+import {
+  assertContrastAA,
+  assertHasMinHeight,
+  assertIsScrollOwner,
+  assertWithinPane,
+} from './_ui-verify'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -166,6 +171,29 @@ describe('LiveListenerTab', () => {
     const badge = screen.getByTestId('ledger-outcome')
     expect(badge).toHaveTextContent('deterministic')
     expect(badge).toHaveAttribute('data-tone', 'deterministic')
+  })
+
+  it('the feed OWNS its scroll (min-h-0 + overflow-y-auto) and cards have a min-height — entries never overflow-clip to nothing (TKT-530)', () => {
+    const fake = new FakeEventSource()
+    render(<LiveListenerTab createEventSource={() => fake} />)
+
+    act(() => {
+      fake.open()
+      fake.emit('entry', JSON.stringify(entry({ queryId: 'q-a' })))
+      fake.emit('entry', JSON.stringify(entry({ queryId: 'q-b' })))
+    })
+
+    const feed = screen.getByTestId('live-feed')
+    // the feed scrolls internally (bounded) instead of overflowing the page and clipping rows
+    assertIsScrollOwner(feed)
+    // every entry card has a min-height floor so it stays legible (does not collapse)
+    const rows = within(feed).getAllByRole('listitem')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      assertHasMinHeight(row)
+    }
+    // and the rows live INSIDE the scroll-owning feed (in-pane, not detached)
+    assertWithinPane(rows[0], 'live-feed')
   })
 
   it('dedups a re-replayed entry (same queryId) after a reconnect', () => {

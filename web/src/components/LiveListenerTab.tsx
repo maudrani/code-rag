@@ -82,7 +82,7 @@ function LedgerRow({ entry }: { entry: QueryLogEntry }) {
   const outcome = llmOutcome(entry)
   const isLlm = entry.band === 'answer' && Boolean(entry.model)
   return (
-    <li className="ledger-entry overflow-hidden rounded-md border border-border/60 bg-card">
+    <li className="ledger-entry min-h-10 shrink-0 overflow-hidden rounded-md border border-border/60 bg-card">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -168,8 +168,8 @@ export function LiveListenerTab({
   )
 
   return (
-    <section className="obs pb-8" aria-label="Live listener">
-      <div className="mb-4 flex items-start justify-between gap-3">
+    <section className="obs flex min-h-0 flex-1 flex-col pb-8" aria-label="Live listener">
+      <div className="mb-4 flex shrink-0 items-start justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold leading-tight">
             <Activity className="size-5 text-primary" aria-hidden="true" />
@@ -185,7 +185,8 @@ export function LiveListenerTab({
 
       {entries.length > 0 ? (
         <ul
-          className="flex max-h-[calc(100vh-16rem)] flex-col gap-2 overflow-y-auto pb-1"
+          data-testid="live-feed"
+          className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-1"
           aria-label="Live query feed"
           aria-live="polite"
         >

@@ -96,3 +96,29 @@ export function assertHasBottomGutter(el: Element): void {
     )
   }
 }
+
+/**
+ * Assert an element is the SCROLL OWNER of its pane (TKT-524/530): it scrolls internally instead of
+ * growing the page. In a flex column that needs BOTH `overflow-y-auto` AND `min-h-0` — without min-h-0
+ * a flex item's implicit `min-height:auto` refuses to shrink below content, so nothing scrolls and the
+ * entries overflow/clip to nothing (the exact Live-feed bug). jsdom can't measure the scroll, but it
+ * CAN see the two classes that establish it.
+ */
+export function assertIsScrollOwner(el: Element): void {
+  const cls = el.className
+  if (!/\boverflow-y-auto\b|\boverflow-auto\b/.test(cls)) {
+    throw new Error('element is not a scroll owner — no overflow-y-auto/overflow-auto class')
+  }
+  if (!/\bmin-h-0\b/.test(cls)) {
+    throw new Error(
+      "element can't scroll in a flex column — missing min-h-0 (the flex item won't shrink below content, so it overflows/clips)",
+    )
+  }
+}
+
+/** Assert an element declares a minimum height (`min-h-*`, not `min-h-0`), so it stays legible. */
+export function assertHasMinHeight(el: Element): void {
+  if (!/\bmin-h-(?!0\b)/.test(el.className)) {
+    throw new Error('element has no min-height (min-h-*) floor — it can collapse/clip to nothing')
+  }
+}
