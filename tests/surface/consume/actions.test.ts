@@ -32,7 +32,30 @@ describe('resolveEngineConfig — TKT-409', () => {
     expect('corpusPath' in cfg).toBe(false)
     expect('apiKey' in cfg).toBe(false)
     expect('indexPath' in cfg).toBe(false)
+    expect('dense' in cfg).toBe(false)
     expect(cfg).toEqual({})
+  })
+
+  it('threads CODE_RAG_DENSE=false → dense:false (offline / heat-safe switch, TKT-448)', () => {
+    expect(resolveEngineConfig({}, { CODE_RAG_DENSE: 'false' })).toEqual({ dense: false })
+    expect(resolveEngineConfig({}, { CODE_RAG_DENSE: '0' })).toEqual({ dense: false })
+    expect(resolveEngineConfig({}, { CODE_RAG_DENSE: 'OFF' })).toEqual({ dense: false })
+  })
+
+  it('threads CODE_RAG_DENSE=true → dense:true', () => {
+    expect(resolveEngineConfig({}, { CODE_RAG_DENSE: 'true' })).toEqual({ dense: true })
+    expect(resolveEngineConfig({}, { CODE_RAG_DENSE: '1' })).toEqual({ dense: true })
+  })
+
+  it('explicit config.dense beats CODE_RAG_DENSE', () => {
+    expect(resolveEngineConfig({ dense: true }, { CODE_RAG_DENSE: 'false' })).toEqual({
+      dense: true,
+    })
+  })
+
+  it('NEGATIVE: CODE_RAG_DENSE empty or garbage omits dense (membrane default wins, no crash)', () => {
+    expect('dense' in resolveEngineConfig({}, { CODE_RAG_DENSE: '' })).toBe(false)
+    expect('dense' in resolveEngineConfig({}, { CODE_RAG_DENSE: 'maybe' })).toBe(false)
   })
 })
 

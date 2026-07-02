@@ -21,11 +21,27 @@ export function resolveEngineConfig(
   const corpusPath = config.corpusPath ?? env.CORPUS_PATH
   const apiKey = config.apiKey ?? env.ANTHROPIC_API_KEY
   const indexPath = config.indexPath ?? env.CODE_RAG_INDEX
+  const dense = config.dense ?? parseDense(env.CODE_RAG_DENSE)
   const resolved: EngineConfig = {}
   if (corpusPath !== undefined) resolved.corpusPath = corpusPath
   if (apiKey !== undefined) resolved.apiKey = apiKey
   if (indexPath !== undefined) resolved.indexPath = indexPath
+  if (dense !== undefined) resolved.dense = dense
   return resolved
+}
+
+/**
+ * CODE_RAG_DENSE → boolean | undefined (TKT-448). false/0/off/no → false (BM25+structural only:
+ * fully offline, no ~25MB model download, heat-safe — one ONNX at a time); true/1/on/yes → true.
+ * Unset / empty / anything else → undefined, so it falls through to the membrane default
+ * (dense on in a live process) — behaviour is UNCHANGED unless the switch is set on purpose.
+ */
+function parseDense(raw: string | undefined): boolean | undefined {
+  if (raw === undefined) return undefined
+  const v = raw.trim().toLowerCase()
+  if (v === 'false' || v === '0' || v === 'off' || v === 'no') return false
+  if (v === 'true' || v === '1' || v === 'on' || v === 'yes') return true
+  return undefined
 }
 
 /**

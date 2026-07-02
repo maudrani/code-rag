@@ -24,6 +24,10 @@ services:
       # keeps the 2nd run snappy. Unset → the CORPUS_PATH mount above is indexed.
       - CODE_RAG_REPO=${CODE_RAG_REPO:-}
       - CODE_RAG_GITHUB_TOKEN=${CODE_RAG_GITHUB_TOKEN:-}
+      # TKT-448: CODE_RAG_DENSE=false runs BM25+structural only — fully offline (no ~25MB model
+      # download) and heat-safe (no ONNX). Unset → dense on (better recall). Retrieval read-surfaces
+      # (stats/health) always build dense-off regardless, so a telemetry read never loads the model.
+      - CODE_RAG_DENSE=${CODE_RAG_DENSE:-}
     volumes:
       # CORPUS_PATH DEFAULTS to the whole repo (a REAL corpus, not a toy subset — the I-1 demo bug); the
       # walker skips node_modules/dist. A big repo cold-embeds in minutes → CODE_RAG_INDEX warms reruns (TKT-438).
