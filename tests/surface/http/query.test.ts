@@ -210,3 +210,31 @@ describe('POST /query — consumer tag override (X-Consumer / ?consumer=) — TK
     expect(querySpy).toHaveBeenCalledWith('q', [], 'web') // header beats the query param
   })
 })
+
+describe('POST /query — body validation (400, not 500) — TKT-442', () => {
+  async function post(body: unknown): Promise<Response> {
+    return queryRoutes(makeMockEngine()).request('/query', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    })
+  }
+
+  it('missing question → 400 (HTTPException), not a 500 from engine.query(undefined)', async () => {
+    expect((await post({})).status).toBe(400)
+  })
+  it('empty question → 400', async () => {
+    expect((await post({ question: '' })).status).toBe(400)
+  })
+  it('whitespace-only question → 400', async () => {
+    expect((await post({ question: '   ' })).status).toBe(400)
+  })
+  it('a non-JSON body → 400 (graceful), not an unhandled 500', async () => {
+    expect((await post('not json at all')).status).toBe(400)
+  })
+  it('question without history → 200 SSE (history defaults to [])', async () => {
+    const res = await post({ question: 'where is foo?' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/event-stream')
+  })
+})

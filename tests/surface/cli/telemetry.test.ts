@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CliError } from '../../../src/cli/errors.js'
 import { parseCli } from '../../../src/cli/parse.js'
 import {
@@ -17,7 +19,10 @@ import {
   getLogPayload,
   getStats,
   getSymbolsPayload,
+  JsonlLedgerSink,
+  readLedger,
 } from '../../../src/consume/index.js'
+import type { Consumer, QueryLogEntry } from '../../../src/contracts/telemetry.js'
 import { MOCK_HEALTH, MOCK_TELEMETRY, makeMockEngine } from '../fixtures/mock-engine.js'
 
 // ─── parse ────────────────────────────────────────────────────────────────────
@@ -252,4 +257,84 @@ describe('CLI telemetry e2e (real engine, no key) — TKT-418', () => {
     expect(parsed.symbols[0]).toHaveProperty('path')
     expect(parsed.symbols[0]).toHaveProperty('span')
   }, 30000)
+})
+
+// ─── run log — the SHARED cross-process ledger (CODE_RAG_LEDGER) — TKT-440 ─────
+describe('run log — shared cross-process ledger (CODE_RAG_LEDGER) — TKT-440', () => {
+  let dir: string
+  let file: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'cli-log-'))
+    file = join(dir, 'ledger.jsonl')
+  })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  const ledgerEntry = (queryId: string, consumer: Consumer = 'cli'): QueryLogEntry => ({
+    ts: 1,
+    queryId,
+    consumer,
+    query: queryId,
+    resultCount: 0,
+    scoresByLeg: { bm25: 0, dense: 0, structural: 0 },
+    band: 'answer',
+    latencyMs: 1,
+  })
+  const seed = (...entries: QueryLogEntry[]): void => {
+    const sink = new JsonlLedgerSink(file)
+    for (const e of entries) sink.append(e)
+  }
+  const logDeps = (env: NodeJS.ProcessEnv): { deps: RunDeps; out: () => string } => {
+    let buf = ''
+    return {
+      deps: {
+        buildEngine: () => makeMockEngine(),
+        stdout: {
+          write: (s) => {
+            buf += s
+            return true
+          },
+        },
+        stderr: { write: () => true },
+        env,
+      },
+      out: () => buf,
+    }
+  }
+
+  it('CODE_RAG_LEDGER set → `log --json` reads the SHARED file (newest-first), not the in-memory ledger', async () => {
+    seed(ledgerEntry('q1', 'cli'), ledgerEntry('q2', 'mcp'))
+    const { deps, out } = logDeps({ NO_COLOR: '1', CODE_RAG_LEDGER: file })
+    const code = await run(['log', '--json'], deps)
+    expect(code).toBe(0)
+    expect(JSON.parse(out().trim())).toEqual({ entries: readLedger(file) })
+    expect(
+      (JSON.parse(out().trim()) as { entries: QueryLogEntry[] }).entries.map((e) => e.queryId),
+    ).toEqual(['q2', 'q1'])
+  })
+
+  it('--consumer filters the SHARED file (not the in-memory ledger)', async () => {
+    seed(ledgerEntry('q1', 'cli'), ledgerEntry('q2', 'mcp'))
+    const { deps, out } = logDeps({ NO_COLOR: '1', CODE_RAG_LEDGER: file })
+    await run(['log', '--consumer', 'mcp', '--json'], deps)
+    expect(
+      (JSON.parse(out().trim()) as { entries: QueryLogEntry[] }).entries.map((e) => e.queryId),
+    ).toEqual(['q2'])
+  })
+
+  it('EDGE: CODE_RAG_LEDGER set but the file is absent → { entries: [] } (graceful)', async () => {
+    const { deps, out } = logDeps({ NO_COLOR: '1', CODE_RAG_LEDGER: join(dir, 'nope.jsonl') })
+    const code = await run(['log', '--json'], deps)
+    expect(code).toBe(0)
+    expect(JSON.parse(out().trim())).toEqual({ entries: [] })
+  })
+
+  it('NEGATIVE: without CODE_RAG_LEDGER, log reads the in-memory ledger (getLog), NOT the shared file', async () => {
+    seed(ledgerEntry('shared-only', 'mcp')) // in the file, but the env is unset
+    const { deps, out } = logDeps({ NO_COLOR: '1' })
+    await run(['log', '--json'], deps)
+    const entries = (JSON.parse(out().trim()) as { entries: QueryLogEntry[] }).entries
+    expect(entries.some((e) => e.queryId === 'shared-only')).toBe(false)
+  })
 })

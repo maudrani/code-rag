@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import type { SSEStreamingApi } from 'hono/streaming'
 import { streamSSE } from 'hono/streaming'
 import type { Engine } from '../../contracts/engine.js'
@@ -20,7 +21,16 @@ export function queryRoutes(engine: Engine): Hono {
   const app = new Hono()
 
   app.post('/query', async (c) => {
-    const { question, history } = await c.req.json<QueryRequest>()
+    // Validate the body (mirror /search): a missing/empty question or a non-JSON body is a clean 400,
+    // never a 500 from engine.query(undefined). history is optional → [] (TKT-442).
+    const body = await c.req
+      .json<Partial<QueryRequest>>()
+      .catch(() => ({}) as Partial<QueryRequest>)
+    const question = body.question
+    if (typeof question !== 'string' || question.trim() === '') {
+      throw new HTTPException(400, { message: 'question must be a non-empty string' })
+    }
+    const history = body.history ?? []
     // Deterministic membrane first: retrieval + gate are known before the answer. The consumer
     // tag honours a client override (X-Consumer / ?consumer=) so the web UI records as 'web'.
     const projection = await engine.query(question, history, resolveConsumer(c))

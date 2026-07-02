@@ -68,6 +68,17 @@ describe('run — TKT-411', () => {
     expect(cap.out.join('')).toContain('code-rag ask')
   })
 
+  it('--help lists EVERY command verb — the help-drift guard (TKT-441)', async () => {
+    const cap = capture()
+    const code = await run(['--help'], { stdout: cap.stdout, stderr: cap.stderr, env: {} })
+    expect(code).toBe(EXIT.OK)
+    const help = cap.out.join('')
+    // the checklist: a command added to parseCli without a HELP line fails this.
+    for (const verb of ['ask', 'stats', 'health', 'log', 'symbols']) {
+      expect(help).toContain(`code-rag ${verb}`)
+    }
+  })
+
   it('--version -> a version on stdout, exit OK', async () => {
     const cap = capture()
     const code = await run(['--version'], { stdout: cap.stdout, stderr: cap.stderr, env: {} })
