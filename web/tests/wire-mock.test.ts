@@ -7,6 +7,8 @@ import {
   traceEventsFixture,
 } from '../src/mocks/fixtures'
 import {
+  looksLikeRepoUrl,
+  makeIngestResponse,
   makeQueryStream,
   makeSearchResponse,
   makeTraceEvents,
@@ -79,6 +81,31 @@ describe('makeSearchResponse — deterministic, no answer', () => {
     expect(Array.isArray(res.results)).toBe(true)
     expect(res.decision).toBeDefined()
     expect('answer' in res).toBe(false)
+  })
+})
+
+describe('makeIngestResponse + looksLikeRepoUrl — POST /ingest mock (TKT-533)', () => {
+  it('accepts allowlisted git URLs and returns a deterministic {activeCorpus, ingestReport}', () => {
+    for (const url of [
+      'https://github.com/foo/bar',
+      'https://github.com/foo/bar.git',
+      'git@github.com:foo/bar.git',
+      'ssh://git@host/foo/bar',
+    ]) {
+      expect(looksLikeRepoUrl(url), url).toBe(true)
+    }
+    const res = makeIngestResponse('https://github.com/foo/bar.git')
+    expect(res.activeCorpus.url).toBe('https://github.com/foo/bar.git')
+    expect(res.ingestReport.filesIndexed).toBeGreaterThan(0)
+    expect(res.ingestReport.chunks).toBeGreaterThan(0)
+    // deterministic: same URL → same numbers (no I/O, no clock)
+    expect(makeIngestResponse('https://github.com/foo/bar.git')).toEqual(res)
+  })
+
+  it('REJECTS a local path / unsafe URL (the /ingest 400 guard — no server-path indexing)', () => {
+    for (const bad of ['/etc/passwd', './repo', 'file:///etc', 'https://h/x; rm -rf /', '']) {
+      expect(looksLikeRepoUrl(bad), bad).toBe(false)
+    }
   })
 })
 

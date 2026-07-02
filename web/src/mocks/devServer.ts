@@ -20,7 +20,12 @@ import {
   traceEventsFixture,
 } from './fixtures'
 import { encodeFrame } from './sseEncode'
-import { makeQueryStream, makeSearchResponse } from './wireMock'
+import {
+  looksLikeRepoUrl,
+  makeIngestResponse,
+  makeQueryStream,
+  makeSearchResponse,
+} from './wireMock'
 
 const SSE_HEADERS = {
   'Content-Type': 'text/event-stream',
@@ -86,6 +91,30 @@ export function mockWirePlugin(): Plugin {
         const body = JSON.stringify(makeSearchResponse(pickProjection(query)))
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(body)
+      })
+
+      // POST /ingest {url} — the interactive web ingest (FTR-5 P4, surface: src/http/routes/ingest.ts).
+      // A valid-looking git URL → a deterministic {activeCorpus, ingestReport} (with a visible delay so
+      // the spinner shows); a local path / unsafe / empty URL → 400 {error}, exactly like the real
+      // route (an HTTP client must not make the server index an arbitrary local path).
+      server.middlewares.use('/ingest', async (req, res, next) => {
+        if (req.method !== 'POST') {
+          next()
+          return
+        }
+        const url = parseField(await readBody(req), 'url').trim()
+        if (url === '' || !looksLikeRepoUrl(url)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              error: 'url must be a git repo URL (https/http/git/ssh or git@host:path)',
+            }),
+          )
+          return
+        }
+        await delay(600) // visible spinner — the demo shows the submitting state
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(makeIngestResponse(url)))
       })
 
       // GET /stats — the per-layer telemetry snapshot (L1->L5) the Observability tab polls (FTR-56).

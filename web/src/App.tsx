@@ -6,6 +6,7 @@ import { LiveListenerTab } from './components/LiveListenerTab'
 import { ManualSearchTab } from './components/ManualSearchTab'
 import { MockDataBanner } from './components/MockDataBanner'
 import { ObservabilityTab } from './components/observability/ObservabilityTab'
+import { RepoIngestBar } from './components/RepoIngestBar'
 import { TracePanel } from './components/TracePanel'
 import { API_BASE, WS_BASE } from './lib/config'
 
@@ -33,6 +34,9 @@ export function App() {
         <p className="app__subtitle">
           Streaming answers grounded in clickable citations · deterministic gradient L0→L5
         </p>
+        {/* FTR-5 P4: paste a git repo URL to index it in-app; the active-corpus chip shows what
+            chat + search currently run over (TKT-533). */}
+        <RepoIngestBar baseUrl={API_BASE} />
         <nav className="tabs">
           <button
             type="button"

@@ -57,3 +57,18 @@ export type { SymbolEntry }
 export interface SymbolsPayload {
   symbols: SymbolEntry[]
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /ingest response (FTR-5 P4, TKT-533). `IngestReport` lives in the master SSOT
+// (src/contracts/engine — the Engine.reindex return), so we bridge it type-only (zero drift). The
+// /ingest response ENVELOPE is inlined at the route (`c.json({ activeCorpus, ingestReport })`), not a
+// named wire type, so — exactly like SymbolsPayload — it stays a trivial LOCAL envelope over the
+// bridged report; its content can't drift because IngestReport itself is sourced from the contract.
+import type { IngestReport } from '../../src/contracts/engine'
+
+export type { IngestReport }
+
+export interface IngestResponse {
+  activeCorpus: { url: string }
+  ingestReport: IngestReport
+}

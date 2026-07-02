@@ -3,7 +3,14 @@
  * Tests target these directly; devServer.ts is a thin transport adapter over them.
  * Types come from the type-only contract bridge (../contract) — zero drift.
  */
-import type { Event, EventLayer, QuerySseEvent, SearchResponse, WireProjection } from '../contract'
+import type {
+  Event,
+  EventLayer,
+  IngestResponse,
+  QuerySseEvent,
+  SearchResponse,
+  WireProjection,
+} from '../contract'
 
 const COST_PER_TOKEN = 0.000002
 
@@ -69,4 +76,31 @@ function tracePayload(layer: EventLayer): Record<string, unknown> {
 /** The /search response is the deterministic projection (results + decision), no answer. */
 export function makeSearchResponse(projection: WireProjection): SearchResponse {
   return projection
+}
+
+// ── POST /ingest (FTR-5 P4, TKT-533) ────────────────────────────────────────
+// web ⊥ Node bars importing surface's isRepoUrl, so the mock re-states its allowlist shape: a git
+// scheme (or scp-like git@host:path) and NO whitespace/shell metacharacters. A local path or an unsafe
+// URL is rejected → the devServer answers 400, exactly like the real route (security boundary: an HTTP
+// client must not make the server index an arbitrary local path).
+const GIT_SCHEME = /^(https?|git|ssh):\/\//i
+const SCP_LIKE = /^[\w.-]+@[\w.-]+:[\w./~-]+$/
+const SHELL_META = /[\s;&|`$(){}<>'"\\]/
+
+export function looksLikeRepoUrl(url: string): boolean {
+  return !SHELL_META.test(url) && (GIT_SCHEME.test(url) || SCP_LIKE.test(url))
+}
+
+/** Deterministic /ingest success for a valid-looking repo URL (no I/O). The report is derived from the
+ *  URL so the demo shows plausible, STABLE numbers without cloning anything. */
+export function makeIngestResponse(url: string): IngestResponse {
+  const filesIndexed = 40 + (url.length % 60)
+  return {
+    activeCorpus: { url },
+    ingestReport: {
+      filesIndexed,
+      chunks: filesIndexed * 6,
+      durationMs: 700 + (url.length % 40) * 15,
+    },
+  }
 }

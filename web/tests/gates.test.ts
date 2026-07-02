@@ -226,6 +226,14 @@ const FRONTEND_GATES: Gate[] = [
     layer: 'frontend',
     gateTest: 'web/tests/ui-verify.test.ts::no design token is defined in more than one CSS file',
   },
+  {
+    id: 'frontend.repo-ingest',
+    claim:
+      'pasting a git repo URL indexes it in-app (POST /ingest); on a 4xx the error shows and the PRIOR active-corpus chip is left unchanged — no context switch on failure (TKT-533)',
+    layer: 'frontend',
+    gateTest:
+      'web/tests/ingest.test.tsx::a 4xx shows the error AND leaves the PRIOR active-corpus chip unchanged',
+  },
 ]
 
 // gateTest files are repo-root-relative (e.g. 'web/tests/x'); web's vitest cwd is web/, so strip
