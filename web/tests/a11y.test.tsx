@@ -15,7 +15,7 @@ import {
 } from '../src/mocks/fixtures'
 import { encodeSse } from '../src/mocks/sseEncode'
 import { makeQueryStream } from '../src/mocks/wireMock'
-import { assertContrastAA, assertHasBottomGutter } from './_ui-verify'
+import { assertContrastAA, assertHasBottomGutter, assertWithinPane } from './_ui-verify'
 import { streamFromString } from './sse-test-utils'
 
 afterEach(() => {
@@ -87,6 +87,16 @@ describe('accessibility — Observability tab', () => {
     expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()
     // the view carries a bottom gutter so its last card does not glue to the viewport bottom (TKT-524)
     assertHasBottomGutter(screen.getByRole('region', { name: /observability/i }))
+    // the layer cards render IN the section pane, not detached at document end (TKT-528)
+    assertWithinPane(screen.getByRole('region', { name: /ingest/i }), 'observability-section')
+  })
+})
+
+describe('layout structure — chat transcript owns its content (TKT-528)', () => {
+  it('the chat transcript is the content pane (messages/empty render inside it, not detached)', () => {
+    render(<ChatView />)
+    const empty = screen.getByText(/ask how the code works/i)
+    assertWithinPane(empty, 'chat-transcript')
   })
 })
 

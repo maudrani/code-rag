@@ -176,6 +176,49 @@ const FRONTEND_GATES: Gate[] = [
     layer: 'frontend',
     gateTest: 'web/tests/manual-search-tab.test.tsx::renders the code preview IN a dedicated pane',
   },
+  {
+    id: 'frontend.live-feed-scroll-owner',
+    claim:
+      'the Live feed owns its scroll (min-h-0 + overflow-y-auto) and cards carry a min-height, so entries never overflow-clip to nothing (TKT-530)',
+    layer: 'frontend',
+    gateTest: 'web/tests/live-listener-tab.test.tsx::the feed OWNS its scroll',
+  },
+  {
+    id: 'frontend.live-card-results',
+    claim:
+      "a Live card lazily fetches + renders its query's results on expand and UNMOUNTS them on collapse (clear-on-close, no accumulation) (TKT-531)",
+    layer: 'frontend',
+    gateTest:
+      'web/tests/live-listener-tab.test.tsx::lazily fetches + renders the query results on expand',
+  },
+  {
+    id: 'frontend.badge-contrast-coverage',
+    claim:
+      'every consumer chip + StatusPill state tone meets WCAG AA on the card surface — the contrast gap beyond OUTCOME_TONES is closed (TKT-526)',
+    layer: 'frontend',
+    gateTest: 'web/tests/ui-verify.test.ts::every consumer + StatusPill tone meets AA',
+  },
+  {
+    id: 'frontend.health-status-path',
+    claim:
+      'the HealthCard degraded/down + failing-check path renders with the correct Badge variant (never mounted before) (TKT-527)',
+    layer: 'frontend',
+    gateTest: 'web/tests/health-card.test.tsx::renders DOWN with the destructive variant',
+  },
+  {
+    id: 'frontend.layout-structure',
+    claim:
+      'the chat transcript + observability section own their content in-pane (not detached at document end) — the TKT-524 structure class extended across views (TKT-528)',
+    layer: 'frontend',
+    gateTest: 'web/tests/a11y.test.tsx::the chat transcript is the content pane',
+  },
+  {
+    id: 'frontend.untested-helpers',
+    claim:
+      'the observability pure helpers (coveragePct/freshnessTone) + the card empty branches are unit-tested across all branches (TKT-529)',
+    layer: 'frontend',
+    gateTest: 'web/tests/layer-cards.test.tsx::coveragePct: full / partial / zero-walked',
+  },
 ]
 
 // gateTest files are repo-root-relative (e.g. 'web/tests/x'); web's vitest cwd is web/, so strip

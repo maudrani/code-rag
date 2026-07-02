@@ -69,7 +69,7 @@ export function ChatView({
       <div className="sr-only" aria-live="polite">
         {announcement}
       </div>
-      <div className="chat__transcript">
+      <div className="chat__transcript" data-testid="chat-transcript">
         {chat.messages.length === 0 ? (
           <div className="chat__empty">
             Ask how the code works, where things live, or what depends on what — answers come

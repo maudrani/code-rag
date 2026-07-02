@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CARD_SURFACE, OUTCOME_TONES } from '../src/lib/badgeTones'
+import { CARD_SURFACE, CONSUMER_TONES, OUTCOME_TONES, STATUS_TONES } from '../src/lib/badgeTones'
 import { assertContrastAA, contrastRatio, TOKENS } from './_ui-verify'
 
 describe('UI-verify kit (TKT-525) — the deterministic leg of RULE-UI-001', () => {
@@ -28,6 +28,25 @@ describe('UI-verify kit (TKT-525) — the deterministic leg of RULE-UI-001', () 
     // documents the honest boundary — contrastRatio takes hex tokens, not a rendered element.
     expect(typeof contrastRatio).toBe('function')
     expect(contrastRatio(TOKENS.refuse, TOKENS.panel)).toBeGreaterThan(0)
+  })
+
+  it('every consumer + StatusPill tone meets AA on the card surface (TKT-526 — incl. the fixed closed/offline)', () => {
+    for (const [name, hex] of Object.entries({ ...CONSUMER_TONES, ...STATUS_TONES })) {
+      expect(contrastRatio(hex, CARD_SURFACE), `${name} (${hex})`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('DecisionBadge band/tier tokens meet AA on the panel (TKT-526)', () => {
+    for (const hex of [TOKENS.answer, TOKENS.refuse, TOKENS.strong, TOKENS.cheap]) {
+      expect(contrastRatio(hex, TOKENS.panel)).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('the search kind-pill (secondary-foreground on secondary) + the mock-banner amber meet AA (TKT-526)', () => {
+    // secondary tokens resolved from index.css oklch (secondary #1d222a, secondary-foreground #e7ecf0)
+    expect(contrastRatio('#e7ecf0', '#1d222a')).toBeGreaterThanOrEqual(4.5)
+    // MockDataBanner: amber-200 text over the (near-black) page background
+    expect(contrastRatio('#fde68a', TOKENS.bg)).toBeGreaterThanOrEqual(4.5)
   })
 })
 

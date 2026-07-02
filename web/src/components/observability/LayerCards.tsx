@@ -24,12 +24,14 @@ import { EmptyState, Metric, StatCard } from './StatCard'
 
 const ICON = 'size-4'
 
-/** Share of discovered files that produced ≥1 chunk (the ingest coverage signal). */
-const coveragePct = (d: IngestTelemetry): number =>
+/** Share of discovered files that produced ≥1 chunk (the ingest coverage signal). Exported for unit
+ *  tests (TKT-529): pure + deterministic; filesWalked=0 → 0 (never NaN/Infinity). */
+export const coveragePct = (d: IngestTelemetry): number =>
   d.filesWalked > 0 ? Math.round((d.filesIndexed / d.filesWalked) * 100) : 0
 
-/** Freshness colour for the last index build: fresh (<1m) / aging (<1h) / stale. */
-const freshnessTone = (staleMs: number): string =>
+/** Freshness colour for the last index build: fresh (<1m) / aging (<1h) / stale (≥1h). Exported for
+ *  unit tests (TKT-529) — the aging/stale branches never render off the all-fresh fixture. */
+export const freshnessTone = (staleMs: number): string =>
   staleMs < 60_000 ? 'bg-emerald-500' : staleMs < 3_600_000 ? 'bg-amber-500' : 'bg-rose-500'
 
 /**

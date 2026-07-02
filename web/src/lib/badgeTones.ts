@@ -20,3 +20,27 @@ export const OUTCOME_TONES = {
 } as const
 
 export type OutcomeTone = keyof typeof OUTCOME_TONES
+
+/**
+ * Consumer chip tones (TKT-526) — one bright, distinct hue per consumer, each proven AA on the card
+ * surface (ui-verify.test.ts). Replaces the ad-hoc per-consumer Tailwind color utilities that were
+ * never contrast-checked. GitHub-dark palette; the chip renders an inline color + a data-consumer attr.
+ */
+export const CONSUMER_TONES = {
+  cli: '#56d364', // green
+  mcp: '#bc8cff', // purple
+  http: '#58a6ff', // blue
+  web: '#e3b341', // amber
+  package: '#ff7b72', // coral
+} as const
+
+/**
+ * Live StatusPill tones (TKT-526) — the closed/offline state was muted-on-muted (illegible, the
+ * TKT-522 shape); these are AA on the card surface. Rendered as an inline color + a data-status attr.
+ */
+export const STATUS_TONES = {
+  connecting: '#adbac7', // legible grey (not the failing muted-on-muted)
+  open: '#3fb950', // green — live
+  reconnecting: '#e3b341', // amber — retrying
+  closed: '#adbac7', // legible grey — offline
+} as const

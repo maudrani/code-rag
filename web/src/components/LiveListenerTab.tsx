@@ -1,20 +1,14 @@
 import { Activity, ChevronDown, ChevronRight } from 'lucide-react'
-import { useState } from 'react'
-import { OUTCOME_TONES, type OutcomeTone } from '@/lib/badgeTones'
+import { useEffect, useRef, useState } from 'react'
+import { CONSUMER_TONES, OUTCOME_TONES, type OutcomeTone, STATUS_TONES } from '@/lib/badgeTones'
 import { cn } from '@/lib/utils'
 import type { EventSourceFactory, LedgerStatus } from '../clients/ledgerStream'
+import { search } from '../clients/searchClient'
 import { useLedgerStream } from '../clients/useLedgerStream'
-import type { Consumer, Leg, QueryLogEntry } from '../contract'
+import type { Chunk, Leg, QueryLogEntry, WireProjection } from '../contract'
 import { formatCost, formatInt, formatMs, formatScore } from './observability/formatters'
-
-/** Each consumer of the one read-surface gets a distinct hue so the cross-consumer story reads at a glance. */
-const CONSUMER_STYLE: Record<Consumer, string> = {
-  cli: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
-  mcp: 'border-violet-500/40 bg-violet-500/15 text-violet-300',
-  http: 'border-sky-500/40 bg-sky-500/15 text-sky-300',
-  web: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
-  package: 'border-rose-500/40 bg-rose-500/15 text-rose-300',
-}
+import { ResultsList } from './ResultsList'
+import { SourceViewer } from './SourceViewer'
 
 const STATUS_TEXT: Record<LedgerStatus, string> = {
   connecting: 'Connecting…',
@@ -24,22 +18,16 @@ const STATUS_TEXT: Record<LedgerStatus, string> = {
 }
 
 function StatusPill({ status }: { status: LedgerStatus }) {
-  const tone =
-    status === 'open'
-      ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-      : status === 'reconnecting'
-        ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-        : 'border-border bg-muted text-muted-foreground'
+  // colour from the AA-approved STATUS_TONES (TKT-526) — `closed` was muted-on-muted (illegible).
   return (
     <span
-      className={cn('flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs', tone)}
+      className="flex items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-0.5 text-xs"
+      style={{ color: STATUS_TONES[status] }}
       data-status={status}
     >
       <span
-        className={cn(
-          'size-1.5 rounded-full',
-          status === 'open' ? 'animate-pulse bg-emerald-400' : 'bg-current',
-        )}
+        className={cn('size-1.5 rounded-full', status === 'open' && 'animate-pulse')}
+        style={{ backgroundColor: STATUS_TONES[status] }}
         aria-hidden="true"
       />
       {STATUS_TEXT[status]}
@@ -76,7 +64,71 @@ function Detail({ label, value }: { label: string; value: string }) {
   )
 }
 
-function LedgerRow({ entry }: { entry: QueryLogEntry }) {
+/**
+ * Per-card result preview (TKT-531). Mounts ONLY while the card is expanded, so collapsing the card
+ * unmounts it — the operator's "clear on close" (N open cards never accumulate N mounted result lists).
+ * On mount it re-runs the card's query through the deterministic /search (same results, no backend or
+ * contract change) and renders them reusing the manual-search result row. A mountedRef ignores a stale
+ * in-flight response if the card is collapsed before it resolves (rapid expand/collapse). Every state.
+ */
+function LedgerRowResults({ query, baseUrl }: { query: string; baseUrl: string }) {
+  const [status, setStatus] = useState<'loading' | 'error' | 'ready'>('loading')
+  const [projection, setProjection] = useState<WireProjection | null>(null)
+  const [source, setSource] = useState<Chunk | null>(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    setStatus('loading')
+    search(query, baseUrl)
+      .then((p) => {
+        if (mountedRef.current) {
+          setProjection(p)
+          setStatus('ready')
+        }
+      })
+      .catch(() => {
+        if (mountedRef.current) {
+          setStatus('error')
+        }
+      })
+    return () => {
+      mountedRef.current = false // collapse/unmount → ignore a late (stale) response
+    }
+  }, [query, baseUrl])
+
+  if (status === 'loading') {
+    return (
+      <div role="status" className="mt-2 text-xs text-muted-foreground">
+        Loading results…
+      </div>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <div role="alert" className="mt-2 text-xs text-muted-foreground">
+        Couldn’t load results for this query.
+      </div>
+    )
+  }
+  const results = projection?.results ?? []
+  if (results.length === 0) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">No results retrieved for this query.</p>
+    )
+  }
+  return (
+    <div
+      data-testid="ledger-row-results"
+      className="mt-2 max-h-64 overflow-auto rounded-md border border-border/60 p-2"
+    >
+      <ResultsList results={results} onOpen={(r) => setSource(r.chunk)} />
+      {source ? <SourceViewer chunk={source} /> : null}
+    </div>
+  )
+}
+
+function LedgerRow({ entry, baseUrl }: { entry: QueryLogEntry; baseUrl: string }) {
   const [open, setOpen] = useState(false)
   const Chevron = open ? ChevronDown : ChevronRight
   const outcome = llmOutcome(entry)
@@ -90,10 +142,9 @@ function LedgerRow({ entry }: { entry: QueryLogEntry }) {
         className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/40"
       >
         <span
-          className={cn(
-            'shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wide',
-            CONSUMER_STYLE[entry.consumer],
-          )}
+          data-consumer={entry.consumer}
+          style={{ color: CONSUMER_TONES[entry.consumer] }}
+          className="shrink-0 rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wide"
         >
           {entry.consumer}
         </span>
@@ -143,6 +194,8 @@ function LedgerRow({ entry }: { entry: QueryLogEntry }) {
               />
             ))}
           </dl>
+          {/* the query's actual retrieved results — lazy on expand, unmounted on collapse (TKT-531) */}
+          <LedgerRowResults query={entry.query} baseUrl={baseUrl} />
         </div>
       ) : null}
     </li>
@@ -191,7 +244,7 @@ export function LiveListenerTab({
           aria-live="polite"
         >
           {entries.map((entry) => (
-            <LedgerRow key={entry.queryId} entry={entry} />
+            <LedgerRow key={entry.queryId} entry={entry} baseUrl={baseUrl} />
           ))}
         </ul>
       ) : status === 'closed' ? (

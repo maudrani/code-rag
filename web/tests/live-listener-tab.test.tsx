@@ -1,10 +1,11 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MinimalEventSource } from '../src/clients/ledgerStream'
 import { LiveListenerTab } from '../src/components/LiveListenerTab'
 import type { QueryLogEntry } from '../src/contract'
 import { CARD_SURFACE, OUTCOME_TONES } from '../src/lib/badgeTones'
+import { answerProjection } from '../src/mocks/fixtures'
 import {
   assertContrastAA,
   assertHasMinHeight,
@@ -194,6 +195,92 @@ describe('LiveListenerTab', () => {
     }
     // and the rows live INSIDE the scroll-owning feed (in-pane, not detached)
     assertWithinPane(rows[0], 'live-feed')
+  })
+
+  it('lazily fetches + renders the query results on expand, and UNMOUNTS them on collapse (TKT-531)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => answerProjection })
+    vi.stubGlobal('fetch', fetchMock)
+    const fake = new FakeEventSource()
+    const user = userEvent.setup()
+    render(<LiveListenerTab createEventSource={() => fake} baseUrl="" />)
+
+    act(() => {
+      fake.open()
+      fake.emit('entry', JSON.stringify(entry({ queryId: 'q-1', query: 'membrane' })))
+    })
+
+    // LAZY: nothing is fetched until the card is expanded
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { expanded: false }))
+
+    // expand -> the deterministic /search is re-run with THIS card's query, results render (reused row)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(String(url)).toContain('/search')
+    expect(JSON.parse(String(init.body))).toMatchObject({ query: 'membrane' })
+    const results = await screen.findByTestId('ledger-row-results')
+    expect(within(results).getAllByText(/RRF/).length).toBeGreaterThan(0)
+
+    // collapse -> the results are UNMOUNTED (cleared), not just hidden (no accumulation)
+    await user.click(screen.getByRole('button', { expanded: true }))
+    expect(screen.queryByTestId('ledger-row-results')).not.toBeInTheDocument()
+  })
+
+  it('ignores a stale in-flight result fetch when the card is collapsed before it resolves (TKT-531 edge)', async () => {
+    let resolveFetch: (() => void) | null = null
+    const fetchMock = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = () =>
+            resolve({ ok: true, status: 200, json: async () => answerProjection })
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const fake = new FakeEventSource()
+    const user = userEvent.setup()
+    render(<LiveListenerTab createEventSource={() => fake} baseUrl="" />)
+
+    act(() => {
+      fake.open()
+      fake.emit('entry', JSON.stringify(entry({ queryId: 'q-1', query: 'membrane' })))
+    })
+
+    await user.click(screen.getByRole('button', { expanded: false })) // expand (fetch pending)
+    await user.click(screen.getByRole('button', { expanded: true })) // collapse before it resolves
+    act(() => {
+      resolveFetch?.() // the stale response arrives after unmount
+    })
+
+    // the late response must NOT render into a closed card (unmounted → ignored, no crash)
+    expect(screen.queryByTestId('ledger-row-results')).not.toBeInTheDocument()
+  })
+
+  it('consumer chips + the status pill expose queryable tone attrs (data-consumer / data-status) — TKT-526', () => {
+    const fake = new FakeEventSource()
+    render(<LiveListenerTab createEventSource={() => fake} />)
+    act(() => {
+      fake.open()
+      fake.emit('entry', JSON.stringify(entry({ queryId: 'q-cli', consumer: 'cli' })))
+    })
+
+    // the status pill reflects its state (open) via data-status (was muted-on-muted for closed, fixed)
+    expect(screen.getByText('Live').closest('[data-status]')).toHaveAttribute('data-status', 'open')
+    // the consumer chip carries its tone key
+    const chip = within(screen.getByTestId('live-feed')).getByText('cli')
+    expect(chip).toHaveAttribute('data-consumer', 'cli')
+  })
+
+  it('shows a "reconnecting" status on a transient drop (TKT-529 D4)', () => {
+    const fake = new FakeEventSource()
+    render(<LiveListenerTab createEventSource={() => fake} />)
+    act(() => {
+      fake.open()
+      fake.fail(0) // still CONNECTING → the browser is auto-reconnecting
+    })
+    expect(screen.getByText(/reconnecting/i)).toBeInTheDocument()
   })
 
   it('dedups a re-replayed entry (same queryId) after a reconnect', () => {
