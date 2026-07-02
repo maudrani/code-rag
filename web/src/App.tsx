@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ChatTelemetry } from './clients/useChatStream'
 import { useTraceSocket } from './clients/useTraceSocket'
 import { ChatView } from './components/ChatView'
 import { LiveListenerTab } from './components/LiveListenerTab'
@@ -19,6 +20,7 @@ type Tab = 'chat' | 'search' | 'observability' | 'live'
 export function App() {
   const [tab, setTab] = useState<Tab>('chat')
   const [queryId, setQueryId] = useState<string | null>(null)
+  const [telemetry, setTelemetry] = useState<ChatTelemetry | null>(null)
   const trace = useTraceSocket(tab === 'chat' ? queryId : null, { baseUrl: WS_BASE })
 
   return (
@@ -65,7 +67,11 @@ export function App() {
       <div className="layout">
         <div className="layout__main">
           {tab === 'chat' ? (
-            <ChatView options={{ baseUrl: API_BASE }} onActiveQuery={setQueryId} />
+            <ChatView
+              options={{ baseUrl: API_BASE }}
+              onActiveQuery={setQueryId}
+              onActiveTelemetry={setTelemetry}
+            />
           ) : tab === 'search' ? (
             <ManualSearchTab baseUrl={API_BASE} />
           ) : tab === 'observability' ? (
@@ -76,7 +82,9 @@ export function App() {
         </div>
         {/* The trace rail is bound to the chat's active queryId — chat-only (search + observability
             render full-width). */}
-        {tab === 'chat' ? <TracePanel events={trace.events} status={trace.status} /> : null}
+        {tab === 'chat' ? (
+          <TracePanel events={trace.events} status={trace.status} telemetry={telemetry} />
+        ) : null}
       </div>
     </main>
   )

@@ -38,7 +38,7 @@ export function ObservabilityTab({ baseUrl = '' }: { baseUrl?: string }) {
   }, [stats, health])
 
   return (
-    <section className="obs" aria-label="Observability">
+    <section className="obs pb-8" aria-label="Observability">
       <div className="obs__header mb-4 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold leading-tight">Observability</h2>

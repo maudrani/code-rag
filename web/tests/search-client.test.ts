@@ -27,6 +27,21 @@ describe('searchClient — deterministic, no answer', () => {
     expect('answer' in res).toBe(false)
   })
 
+  it('identifies the browser as the `web` consumer via the X-Consumer header (ledger attribution)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => answerProjection,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await search('membrane')
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const headers = init.headers as Record<string, string>
+    expect(headers['X-Consumer']).toBe('web')
+  })
+
   it('empty / whitespace query returns an empty projection WITHOUT fetching', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

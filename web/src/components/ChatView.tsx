@@ -1,5 +1,10 @@
 import { useEffect, useMemo } from 'react'
-import { type UseChatStreamOptions, useChatStream } from '../clients/useChatStream'
+import {
+  type ChatTelemetry,
+  telemetryOf,
+  type UseChatStreamOptions,
+  useChatStream,
+} from '../clients/useChatStream'
 import { Composer } from './Composer'
 import { MessageBubble } from './MessageBubble'
 import { StatusPill } from './StatusPill'
@@ -12,9 +17,11 @@ import { StatusPill } from './StatusPill'
 export function ChatView({
   options,
   onActiveQuery,
+  onActiveTelemetry,
 }: {
   options?: UseChatStreamOptions
   onActiveQuery?: (queryId: string | null) => void
+  onActiveTelemetry?: (telemetry: ChatTelemetry | null) => void
 }) {
   const chat = useChatStream(options)
   const canRetry = chat.messages.some((m) => m.phase === 'error')
@@ -29,9 +36,25 @@ export function ChatView({
     return null
   }, [chat.messages])
 
+  // The COMPLETE telemetry for the most recent answered turn — assembled from the wire data the chat
+  // already holds (decision + results + usage), lifted so the trace rail can render it (#2).
+  const activeTelemetry = useMemo(() => {
+    for (let i = chat.messages.length - 1; i >= 0; i -= 1) {
+      const telemetry = telemetryOf(chat.messages[i])
+      if (telemetry) {
+        return telemetry
+      }
+    }
+    return null
+  }, [chat.messages])
+
   useEffect(() => {
     onActiveQuery?.(activeQueryId)
   }, [activeQueryId, onActiveQuery])
+
+  useEffect(() => {
+    onActiveTelemetry?.(activeTelemetry)
+  }, [activeTelemetry, onActiveTelemetry])
 
   const lastAssistant = [...chat.messages].reverse().find((m) => m.role === 'assistant')
   let announcement = chat.status ?? ''

@@ -6,7 +6,8 @@
  */
 import { useCallback, useRef, useState } from 'react'
 import type { Citation, GateDecision, RankedChunk, Turn, WireProjection } from '../contract'
-import { isAbortError, streamSse } from './sseClient'
+import { CONSUMER_HEADER, WEB_CONSUMER } from '../lib/config'
+import { isAbortError, type SseDoneUsage, streamSse } from './sseClient'
 
 export type ChatPhase = 'streaming' | 'done' | 'refused' | 'error'
 
@@ -19,6 +20,43 @@ export interface ChatMessage {
   results?: RankedChunk[]
   queryId?: string
   phase?: ChatPhase
+  /** the original question + the L0-resolved standalone rewrite (WireProjection meta). */
+  question?: string
+  resolvedQuery?: string
+  /** the L5 usage (tokens + estimated cost) from the SSE `done` frame. */
+  usage?: SseDoneUsage
+}
+
+/**
+ * ChatTelemetry — the COMPLETE per-queryId telemetry the chat already RECEIVES over the wire,
+ * assembled for the trace rail: L0 rewrite (question → resolvedQuery), L3/L4 per-leg + fused + cosine
+ * (results), the gate + model (decision), and L5 tokens + cost (usage). No extra endpoint needed.
+ */
+export interface ChatTelemetry {
+  queryId: string
+  question: string
+  resolvedQuery: string
+  decision: GateDecision
+  results: RankedChunk[]
+  usage?: SseDoneUsage
+}
+
+/** Assemble a message's complete telemetry — null until the meta (decision + queryId) has arrived. */
+export function telemetryOf(message: ChatMessage): ChatTelemetry | null {
+  if (message.role !== 'assistant' || !message.decision || !message.queryId) {
+    return null
+  }
+  const telemetry: ChatTelemetry = {
+    queryId: message.queryId,
+    question: message.question ?? '',
+    resolvedQuery: message.resolvedQuery ?? message.question ?? '',
+    decision: message.decision,
+    results: message.results ?? [],
+  }
+  if (message.usage) {
+    telemetry.usage = message.usage
+  }
+  return telemetry
 }
 
 export interface UseChatStreamOptions {
@@ -96,7 +134,7 @@ export function useChatStream(options: UseChatStreamOptions = {}): UseChatStream
       try {
         const res = await fetch(`${baseUrl}/query`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', [CONSUMER_HEADER]: WEB_CONSUMER },
           body: JSON.stringify({ question, history }),
           signal: ac.signal,
         })
@@ -114,12 +152,17 @@ export function useChatStream(options: UseChatStreamOptions = {}): UseChatStream
                 citations: data.citations,
                 results: data.results,
                 queryId: data.queryId,
+                question: data.question,
+                resolvedQuery: data.resolvedQuery,
                 phase: band === 'refuse' ? 'refused' : 'streaming',
               })
             },
             onToken: (text: string) => {
               content += text // mutate local, flush once per event (perf invariant)
               patchAssistant({ content })
+            },
+            onDone: (usage) => {
+              patchAssistant({ usage }) // the L5 tokens + cost (the trace's cost story)
             },
           },
           { signal: ac.signal, stallMs },

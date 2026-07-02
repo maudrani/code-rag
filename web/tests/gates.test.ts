@@ -141,6 +141,41 @@ const FRONTEND_GATES: Gate[] = [
     gateTest:
       'web/tests/live-listener-tab.test.tsx::renders arriving entries as a live feed tagged by consumer',
   },
+  {
+    id: 'frontend.web-consumer',
+    claim:
+      'the web stamps its queries with the `web` consumer identity (X-Consumer header) so surface attributes them to web (not raw http) in the cross-consumer ledger',
+    layer: 'frontend',
+    gateTest: 'web/tests/search-client.test.ts::identifies the browser as the `web` consumer',
+  },
+  {
+    id: 'frontend.chat-telemetry',
+    claim:
+      'the chat trace rail renders the COMPLETE per-queryId telemetry (L0 rewrite, L3/L4 per-leg+fused+cosine, gate+model, L5 tokens+cost) assembled from the wire data the chat already holds',
+    layer: 'frontend',
+    gateTest: 'web/tests/trace-panel.test.tsx::renders the COMPLETE per-queryId telemetry',
+  },
+  {
+    id: 'frontend.contrast-aa',
+    claim:
+      'ledger/outcome band labels use AA-approved design tokens — CI fails at the token level if a label drops below WCAG AA (the RULE-UI-001 deterministic leg; TKT-522/525)',
+    layer: 'frontend',
+    gateTest: 'web/tests/ui-verify.test.ts::PROVES the approved registry',
+  },
+  {
+    id: 'frontend.live-entry-outcome',
+    claim:
+      'each Live entry shows its L5 outcome — the model, "deterministic", or "refused · $0" — driven by answered/model/band, never a false LLM claim (TKT-521)',
+    layer: 'frontend',
+    gateTest: 'web/tests/live-listener-tab.test.tsx::tags each entry with its L5 outcome',
+  },
+  {
+    id: 'frontend.search-preview-inpane',
+    claim:
+      'the manual-search code preview renders inside a dedicated pane (split-pane), not appended at the page bottom (TKT-524)',
+    layer: 'frontend',
+    gateTest: 'web/tests/manual-search-tab.test.tsx::renders the code preview IN a dedicated pane',
+  },
 ]
 
 // gateTest files are repo-root-relative (e.g. 'web/tests/x'); web's vitest cwd is web/, so strip

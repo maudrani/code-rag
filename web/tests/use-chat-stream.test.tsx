@@ -47,6 +47,24 @@ describe('useChatStream — answer band', () => {
   })
 })
 
+describe('useChatStream — consumer identity (TKT-523)', () => {
+  it('sends X-Consumer: web on the /query call so surface tags it web, not http', async () => {
+    const fetchMock = fetchReturning(
+      encodeSse(makeQueryStream(answerProjection, { answer: ANSWER_TEXT })),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const { result } = renderHook(() => useChatStream())
+
+    await act(async () => {
+      await result.current.send('membrane')
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(String(url)).toContain('/query')
+    expect((init.headers as Record<string, string>)['X-Consumer']).toBe('web')
+  })
+})
+
 describe('useChatStream — refuse band', () => {
   it('renders the refusal (decision refuse) with NO answer tokens', async () => {
     vi.stubGlobal('fetch', fetchReturning(encodeSse(makeQueryStream(refuseProjection))))

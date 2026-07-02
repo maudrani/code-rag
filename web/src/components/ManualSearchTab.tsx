@@ -137,19 +137,37 @@ export function ManualSearchTab({ baseUrl }: { baseUrl?: string }) {
         <div className="search__empty">Run a search to see ranked code — no tokens billed.</div>
       )}
       {!loading && projection && (
-        <div className="search__results">
-          <DecisionBadge decision={projection.decision} />
-          <ResultsList
-            results={projection.results}
-            onOpen={(result) => setSource({ chunk: result.chunk })}
-          />
-          <Citations
-            citations={projection.citations}
-            onOpen={(citation) =>
-              setSource({ chunk: resolveCitation(citation, projection.results) })
-            }
-          />
-          {source && <SourceViewer chunk={source.chunk} />}
+        // Split-pane (TKT-524): results on the left, the selected result's code in a dedicated,
+        // padded, internally-scrolling pane on the right — IN CONTEXT, not appended at the page
+        // bottom. Stacks to one column below lg; the pane clamps its own height so long code scrolls
+        // within the pane instead of stretching the page.
+        <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+          <div className="flex min-w-0 flex-col gap-3">
+            <DecisionBadge decision={projection.decision} />
+            <ResultsList
+              results={projection.results}
+              onOpen={(result) => setSource({ chunk: result.chunk })}
+            />
+            <Citations
+              citations={projection.citations}
+              onOpen={(citation) =>
+                setSource({ chunk: resolveCitation(citation, projection.results) })
+              }
+            />
+          </div>
+          <div
+            data-testid="search-preview-pane"
+            className="max-h-[70vh] min-w-0 overflow-auto rounded-lg border border-border bg-card p-3 lg:sticky lg:top-4"
+          >
+            {source ? (
+              <SourceViewer chunk={source.chunk} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Select a result to preview its code here — in context, not dumped at the page
+                bottom.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </section>

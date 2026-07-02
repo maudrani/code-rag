@@ -337,6 +337,9 @@ main {
   background: #161b22;
   color: var(--fg);
   white-space: pre;
+  /* the plaintext fallback IS the .code-block element, so `.code-block pre { overflow-x:auto }`
+     doesn't match it — long lines were clipped by the inherited overflow:hidden until Shiki resolved. */
+  overflow-x: auto;
 }
 
 /* The cited line-span (source viewer, TKT-511): a full-width band on the cited lines only. */
@@ -599,4 +602,47 @@ main {
   .ledger-entry {
     animation: none;
   }
+}
+
+/* ---- layout polish (FTR-56 P6 #3): bottom-gutter, in-context code readability, consistency ---- */
+
+/* Bottom-gluing: the non-chat views scroll the window and had no bottom gutter, so the last
+   card/row sat flush on the viewport edge. Chat is exempt (its composer already pads the bottom). */
+.search {
+  padding-bottom: 24px;
+}
+
+/* Search results density → align with the Tailwind panels above them (padding + radius on the 4px grid). */
+.result {
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+/* Answer markdown (AnswerMarkdown): these classes were emitted but never styled — inline code read
+   as plain prose and block spacing fell back to UA defaults that clash with the bubble padding. */
+.md-inline-code {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+.markdown :first-child {
+  margin-top: 0;
+}
+.markdown :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  margin: 6px 0;
+}
+
+/* In-context code readability: a turn that opens a source view uses the full column width (not the
+   80% assistant bubble), and the cited lines get inner breathing room. */
+.bubble--assistant:has(.source) {
+  max-width: 100%;
+}
+.source__lines {
+  padding: 4px 0;
 }

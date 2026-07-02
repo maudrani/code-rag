@@ -266,15 +266,17 @@ const LEDGER_QUERIES = [
 
 /**
  * makeLedgerEntry — a deterministic-by-index QueryLogEntry for the mock GET /ledger/stream. Cycles the
- * consumer + query, varies band/latency/scores by index, stamps a fresh ts + unique queryId so the
- * dev Live feed looks alive. Node-side (dev server) only; `ts` uses Date.now() at call time.
+ * consumer + query and varies the L5 OUTCOME so the Live feed shows the full richness the enriched
+ * ledger carries (FTR-3): an LLM answer (model + tier + tokens + cost), a DETERMINISTIC search (band
+ * answer, no LLM → no model/cost), and a REFUSED query (band refuse, $0). Node-side (dev) only; `ts`
+ * uses Date.now() at call time.
  */
 export function makeLedgerEntry(i: number): QueryLogEntry {
   const consumer = LEDGER_CONSUMERS[i % LEDGER_CONSUMERS.length]
   const query = LEDGER_QUERIES[i % LEDGER_QUERIES.length]
   const band: QueryLogEntry['band'] = i % 4 === 3 ? 'refuse' : 'answer'
   const base = 0.012 + (i % 5) * 0.004
-  return {
+  const entry: QueryLogEntry = {
     ts: Date.now(),
     queryId: `q-live-${i}`,
     consumer,
@@ -288,4 +290,21 @@ export function makeLedgerEntry(i: number): QueryLogEntry {
     band,
     latencyMs: 24 + (i % 7) * 6,
   }
+  if (band === 'refuse') {
+    // gate withheld the LLM entirely — zero cost.
+    entry.answered = false
+    entry.tokens = 0
+    entry.estCost = 0
+  } else if (i % 3 === 0) {
+    // a deterministic /search — band answer but the LLM never ran (answered stays undefined).
+  } else {
+    // an LLM answer — the gate routed a tier + model, tokens + cost recorded.
+    const tier: 'cheap' | 'strong' = i % 2 === 0 ? 'strong' : 'cheap'
+    entry.answered = true
+    entry.tier = tier
+    entry.model = tier === 'strong' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+    entry.tokens = 90 + (i % 6) * 20
+    entry.estCost = Number((entry.tokens * (tier === 'strong' ? 0.000015 : 0.000004)).toFixed(6))
+  }
+  return entry
 }

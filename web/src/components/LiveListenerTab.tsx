@@ -1,9 +1,11 @@
-import { Activity } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight } from 'lucide-react'
+import { useState } from 'react'
+import { OUTCOME_TONES, type OutcomeTone } from '@/lib/badgeTones'
 import { cn } from '@/lib/utils'
 import type { EventSourceFactory, LedgerStatus } from '../clients/ledgerStream'
 import { useLedgerStream } from '../clients/useLedgerStream'
-import type { Consumer, QueryLogEntry } from '../contract'
-import { formatMs, formatScore } from './observability/formatters'
+import type { Consumer, Leg, QueryLogEntry } from '../contract'
+import { formatCost, formatInt, formatMs, formatScore } from './observability/formatters'
 
 /** Each consumer of the one read-surface gets a distinct hue so the cross-consumer story reads at a glance. */
 const CONSUMER_STYLE: Record<Consumer, string> = {
@@ -45,37 +47,104 @@ function StatusPill({ status }: { status: LedgerStatus }) {
   )
 }
 
-function LedgerRow({ entry }: { entry: QueryLogEntry }) {
+const LEG_LABELS: Leg[] = ['bm25', 'dense', 'structural']
+
+/**
+ * The L5 outcome of a ledger entry (the enriched QueryLogEntry, FTR-3). The tone maps to an
+ * AA-approved design token (badgeTones.ts, proven in ui-verify.test.ts) so the label is always
+ * legible — the earlier `refused` badge was muted-on-muted and invisible (TKT-522):
+ *  - `refused · $0`  — the gate withheld the LLM (band refuse, zero cost)
+ *  - the model id    — an LLM answer (tokens + cost recorded)
+ *  - `deterministic` — a search-only query that never invoked the LLM (contract: answered undefined)
+ */
+function llmOutcome(entry: QueryLogEntry): { label: string; tone: OutcomeTone } {
+  if (entry.band === 'refuse' || entry.answered === false) {
+    return { label: 'refused · $0', tone: 'refused' }
+  }
+  if (entry.model) {
+    return { label: entry.model, tone: 'model' }
+  }
+  return { label: 'deterministic', tone: 'deterministic' }
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <li className="ledger-entry flex items-center gap-3 rounded-md border border-border/60 bg-card px-3 py-2">
-      <span
-        className={cn(
-          'shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wide',
-          CONSUMER_STYLE[entry.consumer],
-        )}
+    <div className="flex flex-col">
+      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="font-mono tabular-nums">{value}</dd>
+    </div>
+  )
+}
+
+function LedgerRow({ entry }: { entry: QueryLogEntry }) {
+  const [open, setOpen] = useState(false)
+  const Chevron = open ? ChevronDown : ChevronRight
+  const outcome = llmOutcome(entry)
+  const isLlm = entry.band === 'answer' && Boolean(entry.model)
+  return (
+    <li className="ledger-entry overflow-hidden rounded-md border border-border/60 bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/40"
       >
-        {entry.consumer}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm" title={entry.query}>
-        {entry.query}
-      </span>
-      <span
-        className={cn(
-          'shrink-0 rounded px-1.5 py-0.5 text-[11px]',
-          entry.band === 'answer' ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-        )}
-      >
-        {entry.band}
-      </span>
-      <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-        {formatMs(entry.latencyMs)}
-      </span>
-      <span
-        className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
-        title="dense-leg fused score"
-      >
-        d {formatScore(entry.scoresByLeg.dense ?? 0)}
-      </span>
+        <span
+          className={cn(
+            'shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wide',
+            CONSUMER_STYLE[entry.consumer],
+          )}
+        >
+          {entry.consumer}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm" title={entry.query}>
+          {entry.query}
+        </span>
+        <span
+          data-testid="ledger-outcome"
+          data-tone={outcome.tone}
+          style={{ color: OUTCOME_TONES[outcome.tone] }}
+          className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px]"
+          title="L5 outcome — the model that served, or deterministic / refused"
+        >
+          {outcome.label}
+        </span>
+        <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+          {formatMs(entry.latencyMs)}
+        </span>
+        <Chevron className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="border-t border-border/60 px-3 py-2">
+          {/* the full (untruncated) query — more context than the summary row (TKT-521) */}
+          <p className="mb-2 break-words text-xs">
+            <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+              query
+            </span>{' '}
+            {entry.query}
+          </p>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+            <Detail label="Consumer" value={entry.consumer} />
+            <Detail label="Band" value={entry.band} />
+            <Detail label="Results" value={String(entry.resultCount)} />
+            <Detail label="Latency" value={formatMs(entry.latencyMs)} />
+            {isLlm ? (
+              <>
+                <Detail label="Tier" value={entry.tier ?? '—'} />
+                <Detail label="Tokens" value={formatInt(entry.tokens ?? 0)} />
+                <Detail label="Est. cost" value={formatCost(entry.estCost ?? 0)} />
+              </>
+            ) : null}
+            {LEG_LABELS.map((leg) => (
+              <Detail
+                key={leg}
+                label={`${leg} score`}
+                value={formatScore(entry.scoresByLeg[leg] ?? 0)}
+              />
+            ))}
+          </dl>
+        </div>
+      ) : null}
     </li>
   )
 }
@@ -99,7 +168,7 @@ export function LiveListenerTab({
   )
 
   return (
-    <section className="obs" aria-label="Live listener">
+    <section className="obs pb-8" aria-label="Live listener">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold leading-tight">
@@ -115,7 +184,11 @@ export function LiveListenerTab({
       </div>
 
       {entries.length > 0 ? (
-        <ul className="flex flex-col gap-2" aria-label="Live query feed" aria-live="polite">
+        <ul
+          className="flex max-h-[calc(100vh-16rem)] flex-col gap-2 overflow-y-auto pb-1"
+          aria-label="Live query feed"
+          aria-live="polite"
+        >
           {entries.map((entry) => (
             <LedgerRow key={entry.queryId} entry={entry} />
           ))}

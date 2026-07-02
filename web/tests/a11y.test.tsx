@@ -5,6 +5,7 @@ import { ChatView } from '../src/components/ChatView'
 import { LiveListenerTab } from '../src/components/LiveListenerTab'
 import { ManualSearchTab } from '../src/components/ManualSearchTab'
 import { ObservabilityTab } from '../src/components/observability/ObservabilityTab'
+import { CARD_SURFACE, OUTCOME_TONES } from '../src/lib/badgeTones'
 import {
   ANSWER_TEXT,
   answerProjection,
@@ -14,6 +15,7 @@ import {
 } from '../src/mocks/fixtures'
 import { encodeSse } from '../src/mocks/sseEncode'
 import { makeQueryStream } from '../src/mocks/wireMock'
+import { assertContrastAA, assertHasBottomGutter } from './_ui-verify'
 import { streamFromString } from './sse-test-utils'
 
 afterEach(() => {
@@ -83,6 +85,8 @@ describe('accessibility — Observability tab', () => {
     }
     // the refresh action is a real, named button
     expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()
+    // the view carries a bottom gutter so its last card does not glue to the viewport bottom (TKT-524)
+    assertHasBottomGutter(screen.getByRole('region', { name: /observability/i }))
   })
 })
 
@@ -119,5 +123,15 @@ describe('accessibility — live listener', () => {
     render(<LiveListenerTab />)
     expect(screen.getByRole('region', { name: /live listener/i })).toBeInTheDocument()
     expect(screen.getByRole('status')).toBeInTheDocument()
+    // the feed view carries a bottom gutter (no bottom-glue) — TKT-524 cross-view check
+    assertHasBottomGutter(screen.getByRole('region', { name: /live listener/i }))
+  })
+})
+
+describe('accessibility — design-token contrast (RULE-UI-001 deterministic leg, TKT-525/522)', () => {
+  it('every ledger outcome tone meets WCAG AA on the card surface (token-level, jsdom-deterministic)', () => {
+    for (const [tone, hex] of Object.entries(OUTCOME_TONES)) {
+      expect(() => assertContrastAA(hex, CARD_SURFACE), `${tone} ${hex}`).not.toThrow()
+    }
   })
 })

@@ -23,3 +23,15 @@ export const WS_BASE: string = API_BASE ? API_BASE.replace(/^http/, 'ws') : ''
  * thing look identical otherwise.
  */
 export const IS_MOCK_BACKEND: boolean = Boolean(import.meta.env.DEV) && API_BASE === ''
+
+/**
+ * Consumer identity the web stamps on the queries it issues (POST /search, POST /query), so surface
+ * tags them `web` in the cross-consumer ledger instead of the generic `http` transport — this is why
+ * a query run from the browser shows up as `web` in the Live feed. Sent as a request header (no body
+ * or URL change; works for the SSE POST too).
+ *
+ * COORDINATION (surface #2): the header NAME must match surface's reader. `X-Consumer` is the
+ * proposal; if surface picks a different name, change only this constant.
+ */
+export const CONSUMER_HEADER = 'X-Consumer'
+export const WEB_CONSUMER = 'web'
