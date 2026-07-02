@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Engine } from '../../../src/contracts/engine.js'
 import type { SearchResponse } from '../../../src/contracts/wire.js'
 import { searchRoutes } from '../../../src/http/routes/search.js'
@@ -89,5 +89,25 @@ describe('POST /search (deterministic, no LLM) — TKT-405', () => {
   it('EDGE: missing query field -> 400', async () => {
     const { status } = await postSearch(makeMockEngine(), {})
     expect(status).toBe(400)
+  })
+
+  it('consumer override (X-Consumer / ?consumer=) tags engine.query; absent → http — TKT-433', async () => {
+    const base = makeMockEngine()
+    const querySpy = vi.fn(base.query)
+    const engine: Engine = { ...base, query: querySpy as Engine['query'] }
+    const app = searchRoutes(engine)
+    const send = (path: string, headers: Record<string, string>) =>
+      app.request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ query: 'q' }),
+      })
+
+    await send('/search', { 'X-Consumer': 'web' })
+    expect(querySpy).toHaveBeenLastCalledWith('q', [], 'web')
+    await send('/search?consumer=web', {})
+    expect(querySpy).toHaveBeenLastCalledWith('q', [], 'web')
+    await send('/search', {}) // no override
+    expect(querySpy).toHaveBeenLastCalledWith('q', [], 'http')
   })
 })

@@ -57,6 +57,12 @@ describe('docker-compose.yml — server (+ web) with the env contract (TKT-430 /
     expect(compose).toContain('CODE_RAG_INDEX')
     expect(compose).toMatch(/index:/) // a named volume for the warm-restart index (like ledger:)
   })
+
+  it('defaults CORPUS_PATH to the mounted repo — a REAL corpus, not a toy subset (TKT-438 / I-1)', () => {
+    // ${CORPUS_PATH:-./} → the whole repo by default; the demo must not silently index a 9-file subset.
+    expect(compose).toMatch(/\$\{CORPUS_PATH:-\.\/?\}:\/corpus/)
+    expect(compose).toContain('CORPUS_PATH=/corpus') // the container indexes the mounted root
+  })
 })
 
 describe('.dockerignore keeps the context small', () => {

@@ -1,11 +1,12 @@
 {
-  "// note": "Example config to consume code-rag's retrieval MCP from a coding agent (Claude Code / Codex / Cursor). The cost-showcase: the agent uses its own subscription instead of metered API tokens (ADR-006). This is the PRODUCT MCP (committed) — distinct from the kernel process-MCP (gitignored).",
+  "// note": "Example config to consume code-rag's retrieval MCP from a coding agent (Claude Code / Codex / Cursor). The cost-showcase: the agent uses its own subscription instead of metered API tokens (ADR-006). This is the PRODUCT MCP (committed) — distinct from the kernel process-MCP (gitignored). REQUIRES `npm run build` first: the bin runs from dist/. CORPUS_PATH is scoped to `src` (the product source — representative, excludes node_modules/web) so the first tool call indexes in seconds, not minutes; CODE_RAG_INDEX persists that index so later runs are warm (FTR-57). Widen CORPUS_PATH to '.' to index the whole repo (bigger cold-embed cost; node_modules/dist are already skipped by the walker).",
   "mcpServers": {
     "code-rag": {
       "command": "node",
       "args": ["dist/src/mcp/serve.js"],
       "env": {
-        "CORPUS_PATH": ".",
+        "CORPUS_PATH": "src",
+        "CODE_RAG_INDEX": ".code-rag/index.db",
         "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
       }
     }

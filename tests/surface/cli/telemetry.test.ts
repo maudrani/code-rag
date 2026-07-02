@@ -4,7 +4,13 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { CliError } from '../../../src/cli/errors.js'
 import { parseCli } from '../../../src/cli/parse.js'
-import { humanHealth, humanLog, humanStats, humanSymbols } from '../../../src/cli/render.js'
+import {
+  humanHealth,
+  humanLog,
+  humanStats,
+  humanSymbols,
+  telemetryJson,
+} from '../../../src/cli/render.js'
 import { type RunDeps, run } from '../../../src/cli/run.js'
 import {
   getHealth,
@@ -70,6 +76,19 @@ describe('parseCli — telemetry commands (TKT-418)', () => {
 describe('render — telemetry views (TKT-418)', () => {
   it('humanStats pretty-prints the payload', () => {
     expect(humanStats({ layer: 'index', data: MOCK_TELEMETRY.index })).toContain('"layer": "index"')
+  })
+  it('humanStats hints when a layer is cold (data:null) — human view only, JSON body kept — TKT-433', () => {
+    const out = humanStats({ layer: 'retrieve', data: null })
+    expect(out).toContain('"layer": "retrieve"') // the JSON payload is still shown
+    expect(out).toContain('"data": null')
+    expect(out.toLowerCase()).toContain('hint') // + a hint on how to populate it
+    expect(out).toContain('ask')
+    expect(out).toContain('/stats?layer=retrieve')
+  })
+  it('the --json path (telemetryJson) has NO hint for a cold layer — machines parse it (TKT-437)', () => {
+    const out = telemetryJson({ layer: 'answer', data: null })
+    expect(out).toBe('{"layer":"answer","data":null}') // machine-stable, unchanged
+    expect(out.toLowerCase()).not.toContain('hint')
   })
   it('humanHealth shows the status and each check', () => {
     const out = humanHealth(MOCK_HEALTH, false)

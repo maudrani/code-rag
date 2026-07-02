@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { streamSSE } from 'hono/streaming'
-import { isConsumer, readLedger } from '../../consume/index.js'
+import { isConsumer, readLedger, readLedgerLines } from '../../consume/index.js'
 import type { Consumer } from '../../contracts/telemetry.js'
 
 /** how many recent entries a new /ledger/stream subscriber replays before tailing live. */
@@ -55,12 +55,24 @@ export function ledgerRoutes(
         if (ledgerPath === undefined || flushing) return
         flushing = true
         try {
-          const chrono = readLedger(ledgerPath).reverse() // oldest-first (append order)
-          if (emitted === -1) emitted = Math.max(0, chrono.length - REPLAY_CAP)
-          for (let i = emitted; i < chrono.length; i++) {
-            await stream.writeSSE({ event: 'entry', data: JSON.stringify(chrono[i]) })
+          // Each new RAW line (append-only, so the index-tail sees them all) re-emits its queryId's
+          // RECONCILED entry (retrieve ⊕ any L5 outcome, FTR-3 P2) as the authoritative wire
+          // event:'entry' / data:QueryLogEntry (TKT-519): the retrieve line emits the entry, the later
+          // outcome line re-emits it ENRICHED (answered/tokens/estCost) — the Live listener upserts by
+          // queryId. readLedger is the SAME reconcile GET /ledger + `code-rag log` use (one SSOT).
+          const lines = readLedgerLines(ledgerPath)
+          const merged = new Map(readLedger(ledgerPath).map((e) => [e.queryId, e]))
+          if (emitted === -1) emitted = Math.max(0, lines.length - REPLAY_CAP)
+          for (let i = emitted; i < lines.length; i++) {
+            const line = lines[i]
+            if (line === undefined) continue
+            const queryId = line.kind === 'entry' ? line.entry.queryId : line.outcome.queryId
+            const entry = merged.get(queryId)
+            if (entry !== undefined) {
+              await stream.writeSSE({ event: 'entry', data: JSON.stringify(entry) })
+            }
           }
-          emitted = chrono.length
+          emitted = lines.length
         } finally {
           flushing = false
         }

@@ -51,6 +51,43 @@ async function collectEntries(
   return out
 }
 
+/** Read SSE frames as {event,data} until `count` are collected (captures the event NAME). */
+async function collectFrames(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  count: number,
+): Promise<Array<{ event: string; data: string }>> {
+  const decoder = new TextDecoder()
+  let buf = ''
+  const out: Array<{ event: string; data: string }> = []
+  while (out.length < count) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let boundary = buf.indexOf('\n\n')
+    while (boundary !== -1) {
+      const frame = buf.slice(0, boundary)
+      buf = buf.slice(boundary + 2)
+      let event = 'message'
+      let data = ''
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice('event:'.length).trim()
+        else if (line.startsWith('data:')) data = line.slice('data:'.length).trim()
+      }
+      if (data) out.push({ event, data })
+      boundary = buf.indexOf('\n\n')
+    }
+  }
+  return out
+}
+
+/** An L5 outcome JSONL line (the 2nd line joined by queryId, FTR-3 P2). */
+function seedOutcome(file: string, queryId: string): void {
+  appendFileSync(
+    file,
+    `${JSON.stringify({ queryId, answered: true, tokens: 9, estCost: 0.004 })}\n`,
+  )
+}
+
 let dir: string
 let file: string
 beforeEach(() => {
@@ -96,6 +133,18 @@ describe('GET /ledger — cross-process snapshot (TKT-427)', () => {
     const res = await app.request('/ledger', { headers: { Origin: 'http://localhost:5173' } })
     expect(res.headers.get('access-control-allow-origin')).not.toBeNull()
   })
+
+  it('reconciles the L5 outcome (2nd line) onto the entry — ONE complete row (FTR-3 P2, TKT-434)', async () => {
+    seed(file, entry('q1')) // retrieve line
+    seedOutcome(file, 'q1') // the L5 outcome line, joined by queryId
+    const app = new Hono()
+    app.route('/', ledgerRoutes(file))
+    const body = (await (await app.request('/ledger')).json()) as { entries: QueryLogEntry[] }
+    expect(body.entries).toHaveLength(1) // ONE reconciled entry, not two rows
+    expect(body.entries[0]?.answered).toBe(true)
+    expect(body.entries[0]?.tokens).toBe(9)
+    expect(body.entries[0]?.estCost).toBe(0.004)
+  })
 })
 
 describe('GET /ledger/stream — SSE tail (TKT-427)', () => {
@@ -119,6 +168,39 @@ describe('GET /ledger/stream — SSE tail (TKT-427)', () => {
       expect(tailed[0]?.consumer).toBe('mcp')
 
       ac.abort() // closes the connection -> stream.aborted -> the poll interval is cleared
+    } finally {
+      server.close()
+    }
+  }, 10000)
+
+  it('re-emits the ENRICHED entry (event:entry) when the L5 outcome joins by queryId (FTR-3 P2)', async () => {
+    seed(file, entry('q1'))
+    const app = new Hono()
+    app.route('/', ledgerRoutes(file, 20))
+    const server = serve({ fetch: app.fetch, port: 0 })
+    try {
+      const port = (server.address() as AddressInfo).port
+      const ac = new AbortController()
+      const res = await fetch(`http://127.0.0.1:${port}/ledger/stream`, { signal: ac.signal })
+      const reader = (res.body as ReadableStream<Uint8Array>).getReader()
+
+      const [first] = await collectFrames(reader, 1)
+      expect(first?.event).toBe('entry') // the retrieve line → event:entry, not yet enriched
+      expect((JSON.parse(first?.data ?? '{}') as { answered?: boolean }).answered).toBeUndefined()
+
+      seedOutcome(file, 'q1') // the L5 outcome appends as the 2nd line (cross-process)
+      const [second] = await collectFrames(reader, 1)
+      expect(second?.event).toBe('entry') // authoritative wire: event:entry / data:QueryLogEntry (TKT-519)
+      const enriched = JSON.parse(second?.data ?? '{}') as {
+        queryId: string
+        answered: boolean
+        tokens: number
+      }
+      expect(enriched.queryId).toBe('q1') // same row — the Live listener upserts by queryId
+      expect(enriched.answered).toBe(true) // now enriched with the L5 outcome
+      expect(enriched.tokens).toBe(9)
+
+      ac.abort()
     } finally {
       server.close()
     }

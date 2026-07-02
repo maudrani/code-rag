@@ -69,9 +69,18 @@ export function telemetryJson(value: unknown): string {
   return JSON.stringify(value)
 }
 
-/** humanStats — the readable `stats` view (the struct is structured data; pretty JSON reads well). */
+/**
+ * humanStats — the readable `stats` view (the struct is structured data; pretty JSON reads well).
+ * A cold one-shot `stats --layer X` returns data:null (no query/index in THIS process) — so the
+ * human view adds a hint on how to populate it. The `--json` path (telemetryJson) is untouched, so
+ * the CLI ≡ MCP ≡ HTTP byte-identity holds; the hint is a terminal-ergonomics nicety only.
+ */
 export function humanStats(payload: EngineTelemetry | LayerStats): string {
-  return `${JSON.stringify(payload, null, 2)}\n`
+  const body = JSON.stringify(payload, null, 2)
+  if ('layer' in payload && payload.data === null) {
+    return `${body}\nhint: no data for '${payload.layer}' in this process yet — it populates after a query here (run \`code-rag ask "<question>" --json\`), or read a running server's GET /stats?layer=${payload.layer}\n`
+  }
+  return `${body}\n`
 }
 
 const STATUS_COLOR: Record<HealthReport['status'], keyof typeof COLORS> = {

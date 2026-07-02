@@ -3,6 +3,7 @@ import type { SSEStreamingApi } from 'hono/streaming'
 import { streamSSE } from 'hono/streaming'
 import type { Engine } from '../../contracts/engine.js'
 import type { QueryRequest, QuerySseEvent } from '../../contracts/wire.js'
+import { resolveConsumer } from '../consumer.js'
 import { toWireProjection } from '../wire.js'
 
 /**
@@ -20,8 +21,9 @@ export function queryRoutes(engine: Engine): Hono {
 
   app.post('/query', async (c) => {
     const { question, history } = await c.req.json<QueryRequest>()
-    // Deterministic membrane first: retrieval + gate are known before the answer.
-    const projection = await engine.query(question, history, 'http')
+    // Deterministic membrane first: retrieval + gate are known before the answer. The consumer
+    // tag honours a client override (X-Consumer / ?consumer=) so the web UI records as 'web'.
+    const projection = await engine.query(question, history, resolveConsumer(c))
 
     return streamSSE(c, async (stream) => {
       // estCost "mirrors the L5 event" (ADR-006/008, G3): it is NOT in the usage

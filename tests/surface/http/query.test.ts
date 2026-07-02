@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Engine } from '../../../src/contracts/engine.js'
 import type { WireProjection } from '../../../src/contracts/wire.js'
 import { queryRoutes } from '../../../src/http/routes/query.js'
@@ -160,5 +160,53 @@ describe('POST /query (SSE) — TKT-404', () => {
     }
     await postQuery(engine, 'q')
     expect(active).toBe(0)
+  })
+})
+
+describe('POST /query — consumer tag override (X-Consumer / ?consumer=) — TKT-433', () => {
+  function spied() {
+    const base = makeMockEngine()
+    const querySpy = vi.fn(base.query)
+    const engine: Engine = { ...base, query: querySpy as Engine['query'] }
+    return { engine, querySpy }
+  }
+  async function post(
+    engine: Engine,
+    path: string,
+    headers: Record<string, string> = {},
+  ): Promise<void> {
+    const res = await queryRoutes(engine).request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ question: 'q', history: [] }),
+    })
+    expect(res.status).toBe(200)
+    await res.text() // drain the SSE stream
+  }
+
+  it('X-Consumer: web → engine.query is tagged web (the standalone UI, not the transport default)', async () => {
+    const { engine, querySpy } = spied()
+    await post(engine, '/query', { 'X-Consumer': 'web' })
+    expect(querySpy).toHaveBeenCalledWith('q', [], 'web')
+  })
+  it('?consumer=web → tagged web', async () => {
+    const { engine, querySpy } = spied()
+    await post(engine, '/query?consumer=web')
+    expect(querySpy).toHaveBeenCalledWith('q', [], 'web')
+  })
+  it("no override → defaults to http (today's behaviour)", async () => {
+    const { engine, querySpy } = spied()
+    await post(engine, '/query')
+    expect(querySpy).toHaveBeenCalledWith('q', [], 'http')
+  })
+  it('NEGATIVE: an invalid X-Consumer falls back to http (a bad tag never fails the query)', async () => {
+    const { engine, querySpy } = spied()
+    await post(engine, '/query', { 'X-Consumer': 'bogus' })
+    expect(querySpy).toHaveBeenCalledWith('q', [], 'http')
+  })
+  it('the X-Consumer header WINS over ?consumer= when both are present (documented precedence) — TKT-436', async () => {
+    const { engine, querySpy } = spied()
+    await post(engine, '/query?consumer=cli', { 'X-Consumer': 'web' })
+    expect(querySpy).toHaveBeenCalledWith('q', [], 'web') // header beats the query param
   })
 })

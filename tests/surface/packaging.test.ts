@@ -28,6 +28,27 @@ describe('packaging: build script config lock (TKT-429 / SC-1, SC-3)', () => {
   })
 })
 
+// ── examples/mcp.json config lock: the product MCP must warm-start a sane corpus, not cold-start the repo ──
+describe('examples/mcp.json — the product MCP ships a sane warm corpus (TKT-439 / I-7)', () => {
+  const mcp = JSON.parse(readFileSync(join(repoRoot, 'examples', 'mcp.json'), 'utf8')) as {
+    mcpServers: Record<string, { args: string[]; env: Record<string, string> }>
+  }
+  const server = mcp.mcpServers['code-rag']
+
+  it('sets CORPUS_PATH + CODE_RAG_INDEX so a real MCP client warm-starts (not a whole-repo cold-start)', () => {
+    expect(server).toBeDefined()
+    // the bug this fixes: an unset/blank CORPUS_PATH or no warm index → the first tool call cold-embeds
+    // the whole repo (minutes + heat). A sane scoped corpus + a persisted index keeps the first call fast.
+    expect(server?.env.CORPUS_PATH?.trim()).toBeTruthy()
+    expect(server?.env.CODE_RAG_INDEX?.trim()).toBeTruthy() // warm-restart (FTR-57)
+  })
+
+  it('runs the compiled dist bin (documents the `npm run build` prerequisite)', () => {
+    expect(server?.args.join(' ')).toContain('dist/src/mcp/serve.js')
+    expect(server?.args.join(' ')).not.toContain('tsx')
+  })
+})
+
 // ── RUN_SLOW: prove the COMPILED dist actually runs (real build + spawn, no tsx) ──
 const RUN_SLOW = process.env.RUN_SLOW === '1'
 describe.skipIf(!RUN_SLOW)('packaging: the compiled dist runs without tsx (RUN_SLOW)', () => {

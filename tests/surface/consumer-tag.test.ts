@@ -56,4 +56,26 @@ describe('consumer tag == real transport (TKT-424 gate)', () => {
       log.every((e) => e.consumer === 'mcp' || e.consumer === 'cli' || e.consumer === 'http'),
     ).toBe(true)
   }, 30000)
+
+  it('HTTP with X-Consumer: web → the ledger records "web" (the standalone UI tag) — TKT-433', async () => {
+    const engine = buildEngine({ corpusPath: FIXTURE_CORPUS })
+    const { app } = buildApp(engine)
+    await app.request('/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'X-Consumer': 'web' },
+      body: JSON.stringify({ query: 'web-probe-marker' }),
+    })
+    // and a bare request (no override) stays 'http' — the default is unchanged
+    await app.request('/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'http-default-marker' }),
+    })
+
+    const log = engine.queryLog()
+    const tagFor = (query: string): string | undefined =>
+      log.find((e) => e.query === query)?.consumer
+    expect(tagFor('web-probe-marker')).toBe('web')
+    expect(tagFor('http-default-marker')).toBe('http')
+  }, 30000)
 })

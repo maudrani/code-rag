@@ -20,6 +20,8 @@ services:
       - CODE_RAG_LEDGER=/data/ledger.jsonl
       - CODE_RAG_INDEX=/index/code-rag.db
     volumes:
+      # CORPUS_PATH DEFAULTS to the whole repo (a REAL corpus, not a toy subset — the I-1 demo bug); the
+      # walker skips node_modules/dist. A big repo cold-embeds in minutes → CODE_RAG_INDEX warms reruns (TKT-438).
       - ${CORPUS_PATH:-./}:/corpus:ro   # the repo to index (read-only)
       - ledger:/data                     # the shared cross-consumer ledger (the web tails it)
       - index:/index                     # the warm-restart index (FTR-57): 2nd run re-embeds only changed files

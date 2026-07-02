@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import type { Engine } from '../../contracts/engine.js'
 import type { SearchRequest, SearchResponse } from '../../contracts/wire.js'
+import { resolveConsumer } from '../consumer.js'
 import { toWireProjection } from '../wire.js'
 
 /**
@@ -22,8 +23,9 @@ export function searchRoutes(engine: Engine): Hono {
       throw new HTTPException(400, { message: 'query must be a non-empty string' })
     }
 
-    // query() only — deterministic, no answer()/LLM/cost (the --dry path).
-    const projection = await engine.query(query, [], 'http')
+    // query() only — deterministic, no answer()/LLM/cost (the --dry path). The consumer tag
+    // honours a client override (X-Consumer / ?consumer=) — the web's assisted-search tags 'web'.
+    const projection = await engine.query(query, [], resolveConsumer(c))
     const response: SearchResponse = toWireProjection(projection)
     return c.json(response)
   })
