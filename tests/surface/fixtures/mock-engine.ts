@@ -109,6 +109,10 @@ export function makeMockEngine(config: MockEngineConfig = {}): Engine & Observab
       return { filesIndexed: 1, chunks: 1, durationMs: 0 }
     },
 
+    async reindex(_corpusPath: string): Promise<IngestReport> {
+      return { filesIndexed: 1, chunks: 1, durationMs: 0 }
+    },
+
     async query(question: string, _history: Turn[], _intent: ConsumerIntent): Promise<Projection> {
       const result: Projection = { ...projection, question, resolvedQuery: question }
       for (const event of makeQueryEventSequence(result.queryId)) emit(event)

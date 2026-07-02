@@ -50,6 +50,11 @@ export interface EngineConfig {
  */
 export interface Engine {
   ingest(repoPath: string): Promise<IngestReport>
+  /** FTR-5 P4: rebuild the in-memory index over a NEW local corpus and make it the active one.
+   *  Build-then-swap: the new index is built off to the side, then installed atomically, so a failed
+   *  rebuild keeps the previous corpus (no empty-index window). Local path only (the clone is the
+   *  consume layer's). Powers POST /ingest — paste a repo URL, index it, chat over it. */
+  reindex(corpusPath: string): Promise<IngestReport>
   query(question: string, history: Turn[], intent: ConsumerIntent): Promise<Projection>
   answer(projection: Projection, history: Turn[]): AsyncIterable<AnswerChunk>
   on(handler: (event: Event) => void): Unsubscribe

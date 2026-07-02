@@ -64,7 +64,7 @@ const REPLAY_CAP = 50
 
 export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & Observable => {
   const bus = createBus()
-  const corpusPath = config.corpusPath ?? DEFAULT_CORPUS
+  let corpusPath = config.corpusPath ?? DEFAULT_CORPUS // mutable: engine.reindex retargets it (FTR-5 P4)
 
   // Lazy provider: a standalone `query` (no rewrite) needs no API key (seam K) — the
   // client is only constructed when the LLM residue or `answer` is actually used.
@@ -166,6 +166,39 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
       durationMs,
     })
     indexBuiltAt = now()
+    return { ...ingestStats, durationMs }
+  }
+
+  // FTR-5 P4: swap the active corpus at runtime. Build the new index off to the side (buildIndexedStore,
+  // in-memory), THEN install it atomically — so a failed build keeps the previous corpus (no empty-index
+  // window, GAP-P4-E) and in-flight queries hit the old index until the swap. Local path only (the clone
+  // is consume's). indexPath warm-restart is the initial ingest's; a reindexed corpus is in-memory (M1).
+  async function reindex(newCorpusPath: string): Promise<IngestReport> {
+    const started = now()
+    await initParser()
+    const { chunks, files } = ingestAndChunk(newCorpusPath) // throws on a bad path -> BEFORE any swap
+    const denseOn = config.dense ?? process.env.VITEST === undefined
+    const embedder = denseOn ? createOnnxEmbedder() : undefined
+    const built = await buildIndexedStore(chunks, embedder ? { embedder } : {})
+    // ── atomic swap: install the new index, retarget the corpus, then release the old ──
+    const oldStore = storeHandle
+    const oldEmbedder = embedderHandle
+    storeHandle = built.store
+    embedderHandle = embedder ?? null
+    deps = built.deps
+    corpusPath = newCorpusPath
+    ingestStats = { filesIndexed: files.length, chunks: chunks.length }
+    const durationMs = now() - started
+    chunkTelemetry = collectChunkTelemetry(chunks)
+    ingestTelemetry = collectIngestTelemetry({
+      files,
+      skipped: [],
+      chunkCount: chunks.length,
+      durationMs,
+    })
+    indexBuiltAt = now()
+    oldStore?.close() // release the previous store AFTER the swap is live
+    void oldEmbedder?.dispose?.()
     return { ...ingestStats, durationMs }
   }
 
@@ -368,5 +401,5 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     }))
   }
 
-  return { ingest, query, answer, on, telemetry, health, replay, queryLog, symbols }
+  return { ingest, reindex, query, answer, on, telemetry, health, replay, queryLog, symbols }
 }
