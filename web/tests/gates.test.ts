@@ -219,6 +219,13 @@ const FRONTEND_GATES: Gate[] = [
     layer: 'frontend',
     gateTest: 'web/tests/layer-cards.test.tsx::coveragePct: full / partial / zero-walked',
   },
+  {
+    id: 'frontend.token-single-source',
+    claim:
+      'no design token is defined in more than one CSS file — the cascade-order hole under the TKT-526 AA guarantee is closed by a source-scan guard (TKT-532)',
+    layer: 'frontend',
+    gateTest: 'web/tests/ui-verify.test.ts::no design token is defined in more than one CSS file',
+  },
 ]
 
 // gateTest files are repo-root-relative (e.g. 'web/tests/x'); web's vitest cwd is web/, so strip

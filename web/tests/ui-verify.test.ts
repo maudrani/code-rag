@@ -1,6 +1,34 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CARD_SURFACE, CONSUMER_TONES, OUTCOME_TONES, STATUS_TONES } from '../src/lib/badgeTones'
 import { assertContrastAA, contrastRatio, TOKENS } from './_ui-verify'
+
+/**
+ * TKT-532 — a design token defined in two CSS files is a cascade-order bug: the effective color is
+ * whichever file loads last, NOT necessarily the AA-proven value TKT-526 asserts. This source-scan
+ * guard fails if any `--token:` is DEFINED in more than one web/src/*.css file (a token themed across
+ * light/dark blocks of the SAME file is fine — that's not cross-file duplication).
+ */
+describe('design-token single source of truth (TKT-532)', () => {
+  it('no design token is defined in more than one CSS file', () => {
+    const files = ['src/styles.css', 'src/index.css']
+    const filesByToken = new Map<string, Set<string>>()
+    for (const file of files) {
+      const css = readFileSync(join(process.cwd(), file), 'utf8')
+      for (const match of css.matchAll(/^\s*(--[\w-]+)\s*:/gm)) {
+        const token = match[1]
+        const set = filesByToken.get(token) ?? new Set<string>()
+        set.add(file)
+        filesByToken.set(token, set)
+      }
+    }
+    const duplicated = [...filesByToken.entries()]
+      .filter(([, fileSet]) => fileSet.size > 1)
+      .map(([token, fileSet]) => `${token} → ${[...fileSet].join(' + ')}`)
+    expect(duplicated, `tokens defined in >1 CSS file:\n${duplicated.join('\n')}`).toEqual([])
+  })
+})
 
 describe('UI-verify kit (TKT-525) — the deterministic leg of RULE-UI-001', () => {
   it('computes the WCAG contrast ratio (white/black is 21:1; bright fg on the dark panel clears AA)', () => {
