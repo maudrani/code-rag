@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
 import type { Engine } from '../contracts/engine.js'
 import type { Observable } from '../contracts/telemetry.js'
+import { ingestRoutes } from './routes/ingest.js'
 import { ledgerRoutes } from './routes/ledger.js'
 import { queryRoutes } from './routes/query.js'
 import { searchRoutes } from './routes/search.js'
@@ -39,6 +40,8 @@ export function buildApp(engine: Engine & Observable, ledgerPath?: string): Buil
   // notFound govern them too — one consistent error envelope across the surface.
   app.route('/', queryRoutes(engine))
   app.route('/', searchRoutes(engine))
+  // POST /ingest — clone a repo URL + reindex the active corpus (FTR-5 P4); the real cloner by default.
+  app.route('/', ingestRoutes(engine))
   // telemetry read-surfaces (GET /stats, /health, /log) — replaces the old stub /health
   // with the real engine.health() (observability §5.2).
   app.route('/', telemetryRoutes(engine))
