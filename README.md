@@ -178,6 +178,20 @@ npm run build                  # emits a runnable dist (tree-sitter grammar copi
 node dist/src/cli/index.js ask "how does retrieval fuse the legs" --dry
 ```
 
+**Scoping the corpus + snappy restarts.** `CORPUS_PATH` sets what to index (default: this repo);
+it applies to the server, CLI, and MCP alike (`CORPUS_PATH=src npm run serve`). The first index is a
+cold *local* embed — seconds for a small tree, a minute or two for a large repo — so for a big
+codebase point `CORPUS_PATH` at the subtree you care about. `CODE_RAG_INDEX` persists the index
+(warm-restart): a second run re-embeds only files whose mtime/size changed, so startup drops to
+seconds. `examples/mcp.json` ships both, so an editor agent starts *scoped and warm* rather than
+cold-indexing the whole repo.
+
+**The `code-rag` command.** The bin is `dist/src/cli/index.js`. After `npm run build`, either run it
+directly (`node dist/src/cli/index.js ask … --dry`, above) or `npm link` once to get a global
+`code-rag` (`code-rag ask … --dry`). `search`/`stats`/`health`/`log`/`symbols` and `--dry` need no
+key; only a streamed `ask` does. A CI run-it step builds and runs `code-rag --help`, so the bin
+cannot ship broken.
+
 Open the printed Vite URL: streaming chat with a grounding/cost badge, clickable citations
 into a source viewer, a live L0→L5 trace rail, a manual-search tab that shows the per-leg
 scores, and an **Observability** tab (per-layer L1→L5 telemetry + health, read over the wire).
