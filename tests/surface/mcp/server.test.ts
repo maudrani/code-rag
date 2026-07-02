@@ -29,6 +29,19 @@ describe('buildMcpServer — real client round-trip (TKT-413)', () => {
     await server.close()
   })
 
+  it('the symbols tool description is HONEST about its index cost — NOT "no cost" (TKT-443)', async () => {
+    const { client, server } = await connect()
+    const { tools } = await client.listTools()
+    // symbols is the ONE read-surface that ensureIndexed()s → the first call cold-indexes, so the
+    // description must NOT claim 'no cost' and must say it indexes.
+    const symbols = tools.find((t) => t.name === 'symbols')
+    expect(symbols?.description?.toLowerCase()).not.toContain('no cost')
+    expect(symbols?.description?.toLowerCase()).toMatch(/index/)
+    // the genuinely-free read-surfaces KEEP their honest 'no cost' (the reword is targeted, not blanket)
+    expect(tools.find((t) => t.name === 'stats')?.description?.toLowerCase()).toContain('no cost')
+    await server.close()
+  })
+
   it('callTool search -> structuredContent = the projection DTO (no context.assembled)', async () => {
     const { client, server } = await connect()
     const res = await client.callTool({ name: 'search', arguments: { query: 'where is foo?' } })

@@ -97,7 +97,7 @@ export function buildMcpServer(engine: Engine & Observable): McpServer {
     'symbols',
     {
       description:
-        'The indexed code symbols (path, symbol, kind, lang, span) for autocomplete + a corpus tree the client folds from `path`. Read-only, no LLM, no cost. structuredContent carries { symbols }.',
+        'The indexed code symbols (path, symbol, kind, lang, span) for autocomplete + a corpus tree the client folds from `path`. Read-only, no LLM. Unlike the held-state stats/health/log, symbols ENSURES the index, so the FIRST call indexes the corpus (a one-time cost/latency; warm afterwards via CODE_RAG_INDEX). structuredContent carries { symbols }.',
       inputSchema: {},
     },
     async () => symbolsTool(engine),
