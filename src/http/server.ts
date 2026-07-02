@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
-import { buildEngine, resolveLedgerPath } from '../consume/index.js'
+import { buildEngine, resolveCorpusSource, resolveLedgerPath } from '../consume/index.js'
 import { buildApp, resolvePort } from './app.js'
 
 /** Anything with a Node-style `close(callback)` — the @hono/node-server instance. */
@@ -28,10 +28,12 @@ export function makeShutdownHandler(server: Closable, exit: (code: number) => vo
  * @hono/node-server, injects the WebSocket upgrade for /ws/trace, and shuts down
  * gracefully on SIGTERM/SIGINT.
  */
-export function startServer(port: number = resolvePort(process.env.PORT)) {
+export async function startServer(port: number = resolvePort(process.env.PORT)) {
+  // FTR-5: a CODE_RAG_REPO URL clones to a local corpus before buildEngine (else CORPUS_PATH).
+  const corpusPath = await resolveCorpusSource({ env: process.env })
   // buildEngine (not createEngine) so, when CODE_RAG_LEDGER is set, THIS server's queries
   // also append to the shared cross-consumer ledger; the same path feeds GET /ledger.
-  const engine = buildEngine()
+  const engine = buildEngine(corpusPath !== undefined ? { corpusPath } : {})
   const ledgerPath = resolveLedgerPath(process.env)
   const { app, injectWebSocket } = buildApp(engine, ledgerPath)
   const server = serve({ fetch: app.fetch, port })
@@ -48,5 +50,8 @@ export function startServer(port: number = resolvePort(process.env.PORT)) {
 // Import-safe: only auto-start when this module is executed directly
 // (`node dist/http/server.js`), never on import (keeps tests/tooling side-effect free).
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  startServer()
+  startServer().catch((err: unknown) => {
+    process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`)
+    process.exit(1)
+  })
 }

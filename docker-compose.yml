@@ -19,6 +19,11 @@ services:
       - CORPUS_PATH=/corpus
       - CODE_RAG_LEDGER=/data/ledger.jsonl
       - CODE_RAG_INDEX=/index/code-rag.db
+      # FTR-5: index a git repo instead of the mounted corpus. Set CODE_RAG_REPO=<url> (+ a
+      # CODE_RAG_GITHUB_TOKEN for a private repo) — it clones to a warm cache dir and CODE_RAG_INDEX
+      # keeps the 2nd run snappy. Unset → the CORPUS_PATH mount above is indexed.
+      - CODE_RAG_REPO=${CODE_RAG_REPO:-}
+      - CODE_RAG_GITHUB_TOKEN=${CODE_RAG_GITHUB_TOKEN:-}
     volumes:
       # CORPUS_PATH DEFAULTS to the whole repo (a REAL corpus, not a toy subset — the I-1 demo bug); the
       # walker skips node_modules/dist. A big repo cold-embeds in minutes → CODE_RAG_INDEX warms reruns (TKT-438).

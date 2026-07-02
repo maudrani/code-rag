@@ -63,6 +63,11 @@ describe('docker-compose.yml — server (+ web) with the env contract (TKT-430 /
     expect(compose).toMatch(/\$\{CORPUS_PATH:-\.\/?\}:\/corpus/)
     expect(compose).toContain('CORPUS_PATH=/corpus') // the container indexes the mounted root
   })
+
+  it('wires a git-repo source: CODE_RAG_REPO + a private-repo token (FTR-5 / TKT-445)', () => {
+    expect(compose).toContain('CODE_RAG_REPO') // index a repo URL instead of the mounted corpus
+    expect(compose).toContain('CODE_RAG_GITHUB_TOKEN') // optional private-repo auth
+  })
 })
 
 describe('.dockerignore keeps the context small', () => {

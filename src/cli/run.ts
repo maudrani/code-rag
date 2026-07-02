@@ -7,6 +7,7 @@ import {
   getStats,
   getSymbolsPayload,
   readLedger,
+  resolveCorpusSource,
   resolveLedgerPath,
 } from '../consume/index.js'
 import type { Engine, EngineConfig } from '../contracts/engine.js'
@@ -38,6 +39,7 @@ flags:
   --dry          deterministic retrieval only — no LLM, no cost, no API key
   --json         emit as JSON (pipeable) — the same shape the MCP tools return; the
                  stats/health/log surfaces are byte-identical across CLI, MCP, and HTTP
+  --repo <url>   index a git repo instead of a local path (clones to a warm cache; or CODE_RAG_REPO)
   -h, --help     show this help
   -V, --version  show the version
 `
@@ -53,6 +55,11 @@ export interface RunDeps {
   stdout: OutStream
   stderr: OutStream
   env: NodeJS.ProcessEnv
+  /** FTR-5: resolve a --repo/CODE_RAG_REPO URL to a local corpus (injected for deterministic tests). */
+  resolveCorpusSource?: (opts: {
+    repo?: string
+    env: NodeJS.ProcessEnv
+  }) => Promise<string | undefined>
   /** stdout.isTTY — gates color along with NO_COLOR. */
   isTTY?: boolean
 }
@@ -63,7 +70,7 @@ export interface RunDeps {
  * is EXIT.ERROR). stdout is the data channel; all errors go to stderr.
  */
 export async function run(argv: string[], deps: RunDeps): Promise<number> {
-  const makeEngine = deps.buildEngine ?? buildEngine
+  const buildEngineFn = deps.buildEngine ?? buildEngine
   let json = false
   try {
     const cmd = parseCli(argv)
@@ -78,6 +85,16 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
 
     json = cmd.json
     const useColor = !deps.env.NO_COLOR && (deps.isTTY ?? false)
+
+    // FTR-5: resolve a --repo / CODE_RAG_REPO URL to a local corpus BEFORE building the engine
+    // (precedence: --repo > CODE_RAG_REPO > CORPUS_PATH). undefined → buildEngine reads CORPUS_PATH.
+    const resolveSource = deps.resolveCorpusSource ?? resolveCorpusSource
+    const repoOpts: { repo?: string; env: NodeJS.ProcessEnv } = { env: deps.env }
+    if (cmd.repo !== undefined) repoOpts.repo = cmd.repo
+    const repoCorpus = await resolveSource(repoOpts)
+    const engineConfig: EngineConfig | undefined =
+      repoCorpus !== undefined ? { corpusPath: repoCorpus } : undefined
+    const makeEngine = (): Engine & Observable => buildEngineFn(engineConfig)
 
     // ─── telemetry read-surfaces (no LLM, no key) ───────────────────────────────
     if (cmd.command === 'stats') {

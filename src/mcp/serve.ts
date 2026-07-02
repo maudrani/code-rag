@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { buildEngine } from '../consume/index.js'
+import { buildEngine, resolveCorpusSource } from '../consume/index.js'
 import { buildMcpServer } from './server.js'
 
 /** An idempotent stdio shutdown handler (close the server, then exit). Exported for testing. */
@@ -25,7 +25,9 @@ export function makeMcpShutdown(
  * `ask --dry` need no API key (the membrane provider is lazy).
  */
 export async function startMcpServer(): Promise<void> {
-  const engine = buildEngine() // CORPUS_PATH / ANTHROPIC_API_KEY from env
+  // FTR-5: a CODE_RAG_REPO URL clones to a local corpus before buildEngine (else CORPUS_PATH).
+  const corpusPath = await resolveCorpusSource({ env: process.env })
+  const engine = buildEngine(corpusPath !== undefined ? { corpusPath } : {}) // + CORPUS_PATH/API key from env
   const server = buildMcpServer(engine)
   const transport = new StdioServerTransport()
 

@@ -9,11 +9,11 @@ import { CliError, EXIT } from './errors.js'
  * OMITTED when absent (exactOptionalPropertyTypes), never set to undefined.
  */
 export type ParsedCommand =
-  | { command: 'ask'; query: string; dry: boolean; json: boolean }
-  | { command: 'stats'; layer?: StatsLayer; json: boolean }
-  | { command: 'health'; json: boolean }
-  | { command: 'log'; consumer?: Consumer; tail?: number; json: boolean }
-  | { command: 'symbols'; json: boolean }
+  | { command: 'ask'; query: string; dry: boolean; json: boolean; repo?: string }
+  | { command: 'stats'; layer?: StatsLayer; json: boolean; repo?: string }
+  | { command: 'health'; json: boolean; repo?: string }
+  | { command: 'log'; consumer?: Consumer; tail?: number; json: boolean; repo?: string }
+  | { command: 'symbols'; json: boolean; repo?: string }
   | { command: 'help' }
   | { command: 'version' }
 
@@ -33,6 +33,7 @@ export function parseCli(argv: string[]): ParsedCommand {
           layer: { type: 'string' },
           consumer: { type: 'string' },
           tail: { type: 'string' },
+          repo: { type: 'string' },
           help: { type: 'boolean', short: 'h', default: false },
           version: { type: 'boolean', short: 'V', default: false },
         },
@@ -52,34 +53,50 @@ export function parseCli(argv: string[]): ParsedCommand {
 
   const [command, arg] = positionals
   const json = values.json === true
+  // --repo <url> (FTR-5): index a git repo instead of a local path; threaded to every engine command,
+  // resolved to a local clone before buildEngine. Omitted when absent (exactOptionalPropertyTypes).
+  const repo = values.repo
+  const withRepo = repo !== undefined ? { repo } : {}
 
   switch (command) {
     case 'ask': {
       if (arg === undefined) {
         throw new CliError(
-          'missing <query> — usage: code-rag ask <query> [--dry] [--json]',
+          'missing <query> — usage: code-rag ask <query> [--dry] [--json] [--repo <url>]',
           EXIT.USAGE,
         )
       }
-      return { command: 'ask', query: arg, dry: values.dry === true, json }
+      return { command: 'ask', query: arg, dry: values.dry === true, json, ...withRepo }
     }
-    case 'stats':
-      return values.layer === undefined
-        ? { command: 'stats', json }
-        : { command: 'stats', layer: parseLayer(values.layer), json }
+    case 'stats': {
+      const result: { command: 'stats'; layer?: StatsLayer; json: boolean; repo?: string } = {
+        command: 'stats',
+        json,
+        ...withRepo,
+      }
+      if (values.layer !== undefined) result.layer = parseLayer(values.layer)
+      return result
+    }
     case 'health':
-      return { command: 'health', json }
+      return { command: 'health', json, ...withRepo }
     case 'log': {
-      const result: { command: 'log'; consumer?: Consumer; tail?: number; json: boolean } = {
+      const result: {
+        command: 'log'
+        consumer?: Consumer
+        tail?: number
+        json: boolean
+        repo?: string
+      } = {
         command: 'log',
         json,
+        ...withRepo,
       }
       if (values.consumer !== undefined) result.consumer = parseConsumer(values.consumer)
       if (values.tail !== undefined) result.tail = parseTail(values.tail)
       return result
     }
     case 'symbols':
-      return { command: 'symbols', json }
+      return { command: 'symbols', json, ...withRepo }
     default:
       throw new CliError(
         `unknown command: ${command ?? '(none)'} (expected: ask | stats | health | log | symbols)`,

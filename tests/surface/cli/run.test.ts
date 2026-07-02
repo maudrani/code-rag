@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { EXIT } from '../../../src/cli/errors.js'
 import { run } from '../../../src/cli/run.js'
 import { buildEngine } from '../../../src/consume/index.js'
+import type { EngineConfig } from '../../../src/contracts/engine.js'
 import { makeMockEngine } from '../fixtures/mock-engine.js'
 
 function capture() {
@@ -84,6 +85,56 @@ describe('run — TKT-411', () => {
     const code = await run(['--version'], { stdout: cap.stdout, stderr: cap.stderr, env: {} })
     expect(code).toBe(EXIT.OK)
     expect(cap.out.join('').trim()).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
+  it('--repo resolves a corpus and threads it to buildEngine (FTR-5 / TKT-445)', async () => {
+    const cap = capture()
+    let received: EngineConfig | undefined = { corpusPath: 'sentinel' }
+    const code = await run(['symbols', '--json', '--repo', 'https://github.com/a/b.git'], {
+      buildEngine: (config) => {
+        received = config
+        return makeMockEngine()
+      },
+      resolveCorpusSource: async ({ repo }) =>
+        repo === 'https://github.com/a/b.git' ? '/cache/clone-dir' : undefined,
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+      env: {},
+    })
+    expect(code).toBe(EXIT.OK)
+    expect(received?.corpusPath).toBe('/cache/clone-dir')
+  })
+
+  it('CODE_RAG_REPO env routes the same as --repo (the shared resolver sees env)', async () => {
+    const cap = capture()
+    let received: EngineConfig | undefined
+    await run(['symbols', '--json'], {
+      buildEngine: (config) => {
+        received = config
+        return makeMockEngine()
+      },
+      resolveCorpusSource: async ({ repo, env }) =>
+        (repo ?? env.CODE_RAG_REPO) !== undefined ? '/env/clone' : undefined,
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+      env: { CODE_RAG_REPO: 'https://github.com/a/b.git' },
+    })
+    expect(received?.corpusPath).toBe('/env/clone')
+  })
+
+  it('no repo -> buildEngine gets NO corpusPath override (real resolver, empty env, no clone)', async () => {
+    const cap = capture()
+    let received: EngineConfig | undefined = { corpusPath: 'sentinel' }
+    await run(['symbols', '--json'], {
+      buildEngine: (config) => {
+        received = config
+        return makeMockEngine()
+      },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+      env: {}, // no CODE_RAG_REPO → the real resolveCorpusSource returns undefined (never clones)
+    })
+    expect(received).toBeUndefined()
   })
 
   it('NEGATIVE: unknown command -> EXIT.USAGE, message to STDERR (stdout stays clean)', async () => {

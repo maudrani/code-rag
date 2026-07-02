@@ -5,6 +5,15 @@
  */
 export type { AskOptions, AskResult } from './actions.js'
 export { ask, buildEngine, resolveEngineConfig } from './actions.js'
+export type { CloneDeps, CorpusSourceOpts } from './corpus.js'
+export {
+  assertSafeRepoUrl,
+  isRepoUrl,
+  redactUrl,
+  repoCacheDir,
+  resolveCorpus,
+  resolveCorpusSource,
+} from './corpus.js'
 export type { LedgerLine, LedgerOutcome, LedgerSink } from './ledger.js'
 export {
   JsonlLedgerSink,

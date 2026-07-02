@@ -39,6 +39,20 @@ describe('parseCli — TKT-410', () => {
     })
   })
 
+  it('`ask foo --repo <url>` -> the repo URL is threaded onto the command (FTR-5 / TKT-445)', () => {
+    expect(parseCli(['ask', 'foo', '--repo', 'https://github.com/a/b.git'])).toEqual({
+      command: 'ask',
+      query: 'foo',
+      dry: false,
+      json: false,
+      repo: 'https://github.com/a/b.git',
+    })
+  })
+
+  it('no --repo -> no repo key (exactOptionalPropertyTypes)', () => {
+    expect('repo' in parseCli(['symbols'])).toBe(false)
+  })
+
   it('--help / -h -> help command', () => {
     expect(parseCli(['--help'])).toEqual({ command: 'help' })
     expect(parseCli(['-h'])).toEqual({ command: 'help' })
