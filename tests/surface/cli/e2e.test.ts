@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -51,4 +52,21 @@ describe('CLI e2e (real subprocess via tsx) — TKT-412', () => {
     }
     expect(pkg.bin?.['code-rag']).toBe('dist/src/cli/index.js')
   })
+
+  it('runs when invoked through a SYMLINK (npm link / global bin), not a silent no-op', () => {
+    // `npm link` puts a symlink on PATH; process.argv[1] is that symlink while import.meta.url is
+    // its realpath, so a naive `argv[1] === import.meta.url` direct-run guard NEVER fires — the
+    // command exits 0 with ZERO output (worse than command-not-found). Regression for that guard:
+    // the shipped `code-rag` binary IS invoked through such a symlink.
+    const linkDir = mkdtempSync(join(tmpdir(), 'code-rag-linkbin-'))
+    const link = join(linkDir, 'code-rag-link.ts')
+    symlinkSync(cliEntry, link)
+    try {
+      const res = spawnSync(tsxBin, [link, '--help'], { cwd: repoRoot, encoding: 'utf8' })
+      expect(res.status).toBe(0)
+      expect(res.stdout).toMatch(/usage:/i) // MUST actually run — catches the 0-byte no-op
+    } finally {
+      rmSync(linkDir, { recursive: true, force: true })
+    }
+  }, 30000)
 })

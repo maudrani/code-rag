@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { buildEngine } from '../consume/index.js'
 import { EXIT } from './errors.js'
@@ -20,10 +21,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   return run(argv, realDeps())
 }
 
-// Import-safe: auto-run only when executed directly (`node dist/src/cli/index.js`
-// or `tsx src/cli/index.ts`), never on import (keeps tests side-effect free).
+// Import-safe: auto-run only when executed directly (`node dist/src/cli/index.js`,
+// `tsx src/cli/index.ts`, OR the `code-rag` bin via `npm link`), never on import (keeps
+// tests side-effect free). `npm link` invokes through a symlink, so process.argv[1] is the
+// symlink while import.meta.url is its REALPATH — realpathSync(argv[1]) reconciles them so the
+// guard fires for the shipped binary too (regression: it silently no-op'd through the link).
 const invokedPath = process.argv[1]
-if (invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).href) {
+if (
+  invokedPath !== undefined &&
+  import.meta.url === pathToFileURL(realpathSync(invokedPath)).href
+) {
   main()
     .then((code) => process.exit(code))
     .catch((err: unknown) => {
