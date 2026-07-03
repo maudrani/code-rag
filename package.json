@@ -11,7 +11,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && mkdir -p dist/src/chunk/grammars && cp src/chunk/grammars/*.wasm dist/src/chunk/grammars/",
+    "build": "tsc -p tsconfig.json && node -e \"const fs=require('fs'),p='src/chunk/grammars',o='dist/'+p;fs.mkdirSync(o,{recursive:true});for(const f of fs.readdirSync(p))if(f.endsWith('.wasm'))fs.copyFileSync(p+'/'+f,o+'/'+f)\"",
     "serve": "tsx src/http/server.ts",
     "cli": "tsx src/cli/index.ts",
     "mcp": "tsx src/mcp/serve.ts",

@@ -158,6 +158,10 @@ whole-repo embed is CPU-heavy — so dense is **opt-in**. The default is BM25 + 
 offline, never freezes); `CODE_RAG_DENSE=true` enables the semantic leg. Enabling it over a whole repo is
 *refused* with an actionable message on every consumer, so scope `CORPUS_PATH` first.
 
+> **Shell.** The commands below assume a POSIX shell (macOS/Linux, WSL, or Git Bash). On native Windows
+> PowerShell, put the key in `.env` (`copy .env.example .env`) instead of the inline `VAR=… cmd` form, and
+> use `copy` for `cp`. Docker Desktop and the auto-loaded `.env` make the Windows path the same either way.
+
 ### Docker — the whole stack, one command
 
 ```bash
@@ -182,8 +186,9 @@ CORPUS_PATH=src npm run serve
 cd web && npm install && VITE_API_BASE=http://localhost:8787 npm run dev
 ```
 
-`npm link` once for a global `code-rag` (`code-rag ask … --dry`). `search`/`stats`/`health`/`log`/
-`symbols` and `--dry` need no key; only a streamed `ask` does.
+`npm link` once for a global `code-rag` (`code-rag ask … --dry`). The CLI verbs are
+`ask`/`stats`/`health`/`log`/`symbols`; `ask --dry` and the read-surfaces need no key, only a streamed
+`ask` does. (Deterministic `search` is `ask --dry` on the CLI, a tool over the MCP, and `POST /search`.)
 
 ### Opt into dense (higher recall, CPU-heavy)
 
