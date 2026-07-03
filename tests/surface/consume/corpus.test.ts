@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readActiveCorpus, writeActiveCorpus } from '../../../src/consume/activeCorpus.js'
 import {
   assertSafeRepoUrl,
   isRepoUrl,
@@ -118,6 +120,60 @@ describe('resolveCorpusSource — env/flag wiring + token (TKT-445)', () => {
       deps: { clone },
     })
     expect(clone.mock.calls[0]?.[0]).toBe('https://secret123@github.com/a/private.git')
+  })
+})
+
+// The shared "active corpus" pointer (CODE_RAG_STATE): with a repo, resolveCorpusSource PUBLISHES the
+// choice to the shared file; with NO repo, it FOLLOWS the last ingest recorded there. UNSET → EXACTLY
+// today (independent) — the hard no-regression guard. clone is a fake that mkdirs the dest (no network).
+describe('resolveCorpusSource — shared active-corpus pointer (CODE_RAG_STATE)', () => {
+  const dirsToClean: string[] = []
+  const fakeClone = async (_url: string, dest: string): Promise<void> => {
+    mkdirSync(dest, { recursive: true }) // a fake clone: just materialize the dest dir
+    dirsToClean.push(dest)
+  }
+  function stateEnv(): { stateFile: string; env: NodeJS.ProcessEnv } {
+    const work = mkdtempSync(join(tmpdir(), 'corpus-state-'))
+    dirsToClean.push(work)
+    const stateFile = join(work, 'state.json')
+    return { stateFile, env: { CODE_RAG_STATE: stateFile } }
+  }
+  afterEach(() => {
+    for (const d of dirsToClean.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+
+  it('no repo/CODE_RAG_REPO + a written active corpus → returns the active path (follows the last ingest)', async () => {
+    const { env } = stateEnv()
+    const active = mkdtempSync(join(tmpdir(), 'corpus-active-'))
+    dirsToClean.push(active)
+    writeActiveCorpus({ url: 'https://github.com/a/prev.git', path: active }, env)
+
+    const clone = vi.fn(fakeClone)
+    const dir = await resolveCorpusSource({ env, deps: { clone } })
+    expect(dir).toBe(active) // followed the shared pointer
+    expect(clone).not.toHaveBeenCalled() // no repo → nothing to clone
+  })
+
+  it('an explicit repo WINS over the state AND overwrites it', async () => {
+    const { env } = stateEnv()
+    const stale = mkdtempSync(join(tmpdir(), 'corpus-stale-'))
+    dirsToClean.push(stale)
+    writeActiveCorpus({ url: 'https://github.com/a/stale.git', path: stale }, env)
+
+    const url = 'https://github.com/a/winner-unique.git'
+    rmSync(repoCacheDir(url), { recursive: true, force: true }) // ensure a fresh clone (no stale .git)
+    const clone = vi.fn(fakeClone)
+    const dir = await resolveCorpusSource({ repo: url, env, deps: { clone } })
+
+    expect(clone).toHaveBeenCalledTimes(1) // the explicit repo was cloned, not the state path
+    expect(dir).toBe(repoCacheDir(url)) // returns the freshly-resolved clone, NOT `stale`
+    expect(readActiveCorpus(env)).toEqual({ url, path: dir }) // and the shared pointer was overwritten
+  })
+
+  it('CODE_RAG_STATE unset + no repo → undefined (the hard no-regression guard)', async () => {
+    const clone = vi.fn(fakeClone)
+    expect(await resolveCorpusSource({ env: {}, deps: { clone } })).toBeUndefined()
+    expect(clone).not.toHaveBeenCalled()
   })
 })
 

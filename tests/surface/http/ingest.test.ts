@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -100,5 +100,29 @@ describe('POST /ingest — clone + reindex + report the active corpus (TKT-446)'
       await post(app, '/ingest', { url: 'https://github.com/acme/fixture.git' })
     ).text()
     expect(text).not.toMatch(/\/\/[^/\s"]+@/) // no `//userinfo@` (a token) anywhere in the response
+  }, 30000)
+
+  it('with CODE_RAG_STATE set → a successful ingest writes the shared active corpus {url, path}', async () => {
+    // the route writes via the DEFAULT env (server process) → mutate process.env, save + restore it.
+    const saved = process.env.CODE_RAG_STATE
+    const stateDir = mkdtempSync(join(tmpdir(), 'ingest-state-'))
+    const stateFile = join(stateDir, 'state.json')
+    process.env.CODE_RAG_STATE = stateFile
+    try {
+      const engine = buildEngine({ corpusPath: emptyDir })
+      const app = appWith(engine, cloneFixture)
+      const res = await post(app, '/ingest', { url: 'https://github.com/acme/fixture.git' })
+      expect(res.status).toBe(200)
+
+      expect(existsSync(stateFile)).toBe(true) // the shared truth was published
+      const state = JSON.parse(readFileSync(stateFile, 'utf8')) as { url: string; path: string }
+      expect(state.url).toBe('https://github.com/acme/fixture.git')
+      expect(typeof state.path).toBe('string')
+      expect(state.path.length).toBeGreaterThan(0) // the local clone dir the server indexed
+    } finally {
+      if (saved === undefined) delete process.env.CODE_RAG_STATE
+      else process.env.CODE_RAG_STATE = saved
+      rmSync(stateDir, { recursive: true, force: true })
+    }
   }, 30000)
 })

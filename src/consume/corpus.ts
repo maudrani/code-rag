@@ -4,6 +4,7 @@ import { existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { readActiveCorpus, writeActiveCorpus } from './activeCorpus.js'
 
 /**
  * resolveCorpus (FTR-5) — the assignment wants "a GitHub repo OR local files". A repo URL resolves to a
@@ -128,18 +129,29 @@ export interface CorpusSourceOpts {
 
 /**
  * resolveCorpusSource — the ONE resolver every entrypoint (CLI/server/MCP) calls before buildEngine:
- * precedence explicit --repo > CODE_RAG_REPO > undefined (→ fall through to CORPUS_PATH in buildEngine).
- * Returns a LOCAL dir (cloned/pulled) or undefined. Mirrors CORPUS_PATH's single-loader discipline so a
- * URL wires to the server, CLI, and MCP at once. The token is read from env (never a flag → never in ps).
+ * precedence explicit --repo > CODE_RAG_REPO > the shared active-corpus pointer > undefined (→ fall
+ * through to CORPUS_PATH in buildEngine). Returns a LOCAL dir (cloned/pulled) or undefined. Mirrors
+ * CORPUS_PATH's single-loader discipline so a URL wires to the server, CLI, and MCP at once. The token is
+ * read from env (never a flag → never in ps).
+ *
+ * When a repo IS resolved, the choice is written to the shared CODE_RAG_STATE pointer (opt-in) so every
+ * OTHER consumer follows it; when NO repo is given, a consumer FOLLOWS the last ingest via that pointer.
+ * With CODE_RAG_STATE unset, both sides no-op → EXACTLY today's independent behaviour (no regression).
  */
 export async function resolveCorpusSource(
   opts: CorpusSourceOpts = {},
 ): Promise<string | undefined> {
   const env = opts.env ?? process.env
   const repoUrl = (opts.repo ?? env.CODE_RAG_REPO)?.trim()
-  if (repoUrl === undefined || repoUrl === '') return undefined
+  if (repoUrl === undefined || repoUrl === '') {
+    // no explicit repo → follow the last ingest recorded in the shared pointer (undefined if unset).
+    const active = readActiveCorpus(env)
+    return active?.path
+  }
   const token = env.CODE_RAG_GITHUB_TOKEN?.trim()
   const deps: CloneDeps = { ...opts.deps }
   if (token !== undefined && token !== '') deps.token = token
-  return resolveCorpus(repoUrl, deps)
+  const path = await resolveCorpus(repoUrl, deps)
+  writeActiveCorpus({ url: repoUrl, path }, env) // publish the choice to the shared truth (opt-in)
+  return path
 }

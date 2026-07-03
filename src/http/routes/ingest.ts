@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
-import { type CloneDeps, isRepoUrl, resolveCorpus } from '../../consume/index.js'
+import { type CloneDeps, isRepoUrl, resolveCorpus, writeActiveCorpus } from '../../consume/index.js'
 import type { Engine, IngestReport } from '../../contracts/engine.js'
 
 interface IngestRequest {
@@ -51,6 +51,10 @@ export function ingestRoutes(engine: Engine, deps: { clone?: CloneDeps['clone'] 
         message: `reindex failed (active corpus unchanged): ${err instanceof Error ? err.message : 'error'}`,
       })
     }
+
+    // Publish the choice to the shared CODE_RAG_STATE pointer (opt-in) so the CLI/MCP/server follow this
+    // web ingest as the active corpus. Runs in the SERVER process → default env; a no-op when unset.
+    writeActiveCorpus({ url, path: dir })
 
     // activeCorpus = the human identity (the URL the client asked for). M1 public-repo → no token here,
     // so nothing sensitive is echoed. The IngestReport tells the client what got indexed.
