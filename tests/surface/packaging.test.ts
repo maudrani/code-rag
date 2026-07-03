@@ -16,9 +16,14 @@ const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as 
 describe('packaging: build script config lock (TKT-429 / SC-1, SC-3)', () => {
   it('the build compiles with tsc AND copies the tree-sitter grammar .wasm into dist', () => {
     expect(pkg.scripts.build).toContain('tsc')
-    // the README-flagged gap: tsc does not copy .wasm — the build must.
-    expect(pkg.scripts.build).toMatch(/grammars.*\.wasm/)
-    expect(pkg.scripts.build).toContain('dist/src/chunk/grammars')
+    // the README-flagged gap: tsc does not copy .wasm — the build must. The copy is a pure-node fs
+    // step (not POSIX mkdir/cp), so `npm run build` works on native Windows too (cross-OS), and
+    // unchanged inside the Docker linux build.
+    expect(pkg.scripts.build).toMatch(/grammars/)
+    expect(pkg.scripts.build).toMatch(/\.wasm/)
+    expect(pkg.scripts.build).toContain('copyFileSync') // node fs copy, not `cp` — cross-OS
+    expect(pkg.scripts.build).toMatch(/dist/) // targets dist/
+    expect(pkg.scripts.build).not.toMatch(/\bcp\b|\bmkdir -p\b/) // no POSIX-only shell built-ins
   })
 
   it('the bin points at the COMPILED entry (dist, not tsx/src)', () => {
