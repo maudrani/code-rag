@@ -62,9 +62,6 @@ export interface RunDeps {
   }) => Promise<string | undefined>
   /** stdout.isTTY — gates color along with NO_COLOR. */
   isTTY?: boolean
-  /** heat guard (injected so tests opt out): refuse a cold dense-embed of a whole repo before `ask`
-   *  builds the engine — the footgun that freezes the machine. The real entry passes assertDenseAskSafe. */
-  assertDenseAskSafe?: (corpusDir: string, env: NodeJS.ProcessEnv) => void
 }
 
 /**
@@ -141,13 +138,6 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
       )
       return EXIT.OK
     }
-
-    // HEAT GUARD (before building the dense engine): a bare `code-rag ask` resolves the corpus to the
-    // WHOLE repo and, dense ON by default, would cold-embed every chunk and can freeze the machine. Guard
-    // BOTH --dry and streamed asks — --dry still builds the index. The effective corpus mirrors the
-    // engine's own resolution: --repo/CODE_RAG_REPO clone > CORPUS_PATH > the cwd self-index.
-    const askCorpusDir = repoCorpus ?? deps.env.CORPUS_PATH ?? '.'
-    deps.assertDenseAskSafe?.(askCorpusDir, deps.env)
 
     const streaming = !cmd.dry && !cmd.json // the only path that streams tokens
 

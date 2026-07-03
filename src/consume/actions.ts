@@ -59,21 +59,21 @@ function truthy(raw: string | undefined): boolean {
 }
 
 /**
- * assertDenseAskSafe — a backstop for the ONE remaining heat footgun after dense went opt-in: someone
- * EXPLICITLY sets CODE_RAG_DENSE=true and then `code-rag ask` self-indexes a whole repo, cold-embedding
- * every chunk (the local MiniLM runs per chunk → CPU + swap → freeze). Dense is now OFF by default, so a
- * bare `ask` runs BM25 + structural and is heat-safe — this only guards the explicit dense-on case. It
- * walks the corpus FIRST (cheap file discovery, no embedding) and throws an ACTIONABLE error above the
- * cap. No-op unless dense is explicitly on. `walkFn` is injected so it is unit-testable offline.
+ * assertDenseAskSafe — the heat backstop for the ONE remaining footgun after dense went opt-in: dense is
+ * EXPLICITLY on (CODE_RAG_DENSE=true / config.dense) over a WHOLE repo, so the first index cold-embeds
+ * every chunk (the local MiniLM runs per chunk → CPU + swap → freeze). It is called from buildEngine, so
+ * it protects EVERY consumer — CLI, HTTP server, MCP, Docker, the package API — not just the CLI. The
+ * caller passes the RESOLVED `denseOn` (a dense-off read-surface or a bare BM25 run passes straight
+ * through). It walks the corpus FIRST (cheap file discovery, no embedding) and throws an ACTIONABLE error
+ * above the cap. `walkFn` is injected so it is unit-testable offline.
  */
 export function assertDenseAskSafe(
+  denseOn: boolean,
   corpusDir: string,
   env: NodeJS.ProcessEnv = process.env,
   walkFn: (root: string) => { files: string[] } = walk,
 ): void {
-  // Dense is opt-in now: only an EXPLICIT CODE_RAG_DENSE=true can cold-embed. Unset/false → BM25 +
-  // structural (no ONNX, no heat), so a bare `ask` is always safe and must not be blocked.
-  if (parseDense(env.CODE_RAG_DENSE) !== true) return
+  if (!denseOn) return // dense off → no ONNX → heat-safe (the default, and every read-surface)
   if (truthy(env.CODE_RAG_ALLOW_BIG_DENSE)) return // explicit "this box can take it"
   let fileCount: number
   try {
@@ -87,9 +87,9 @@ export function assertDenseAskSafe(
       `local model runs per chunk, which can FREEZE the machine (the >${DENSE_COLD_FILE_CAP}-file footgun).\n` +
       `Pick one:\n` +
       `  - drop the dense leg (default): unset CODE_RAG_DENSE — BM25 + structural is heat-safe\n` +
-      `  - a smaller corpus:            CORPUS_PATH=src/contracts code-rag ask "..."\n` +
-      `  - a specific repo:             code-rag ask --repo <git-url> "..."\n` +
-      `  - override (you accept the load): CODE_RAG_ALLOW_BIG_DENSE=1 code-rag ask "..."`,
+      `  - a smaller corpus:            CORPUS_PATH=src/contracts ...\n` +
+      `  - a specific repo (CLI):       code-rag ask --repo <git-url> "..."\n` +
+      `  - override (you accept the load): CODE_RAG_ALLOW_BIG_DENSE=1 ...`,
   )
 }
 
@@ -106,7 +106,12 @@ export function buildEngine(
   config: EngineConfig = {},
   env: NodeJS.ProcessEnv = process.env,
 ): Engine & Observable {
-  const engine = createEngine(resolveEngineConfig(config, env))
+  const resolved = resolveEngineConfig(config, env)
+  // Heat guard on EVERY consumer (CLI, HTTP server, MCP, Docker, package), not just the CLI: refuse to
+  // COLD dense-embed a whole repo, the footgun that freezes a laptop. Only fires when dense is actually
+  // ON — a bare BM25 run and every dense-off read-surface pass straight through, no walk.
+  assertDenseAskSafe(resolved.dense === true, resolved.corpusPath ?? '.', env)
+  const engine = createEngine(resolved)
   const ledgerPath = resolveLedgerPath(env)
   return ledgerPath === undefined ? engine : withLedger(engine, new JsonlLedgerSink(ledgerPath))
 }

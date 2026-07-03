@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server'
+import { loadEnvFile } from '../boot/loadEnvFile.js'
 import {
   buildEngine,
   isDirectRun,
@@ -58,6 +59,7 @@ export async function startServer(port: number = resolvePort(process.env.PORT)) 
 // Import-safe: only auto-start when this module is executed directly (`node dist/…`, the linked
 // bin, etc.), never on import (keeps tests/tooling side-effect free) — realpath-safe guard (TKT-447).
 if (isDirectRun(process.argv[1], import.meta.url)) {
+  loadEnvFile() // auto-load a project-root .env (real exports + compose env still win) — before any read
   startServer().catch((err: unknown) => {
     process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`)
     process.exit(1)

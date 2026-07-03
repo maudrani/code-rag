@@ -33,26 +33,6 @@ describe('run — TKT-411', () => {
     expect(cap.err.join('')).toBe('')
   }, 30000)
 
-  it('HEAT GUARD: a wired guard aborts `ask` BEFORE the engine is built (no cold whole-repo embed)', async () => {
-    const cap = capture()
-    let engineBuilt = false
-    const code = await run(['ask', 'what is KyRequest'], {
-      buildEngine: () => {
-        engineBuilt = true
-        return makeMockEngine()
-      },
-      stdout: cap.stdout,
-      stderr: cap.stderr,
-      env: {},
-      assertDenseAskSafe: () => {
-        throw new Error('refusing to dense-embed 295 files from "." cold — CODE_RAG_DENSE=false')
-      },
-    })
-    expect(code).toBe(EXIT.ERROR)
-    expect(cap.err.join('')).toMatch(/refusing to dense-embed/i)
-    expect(engineBuilt).toBe(false) // aborted before any indexing/embedding — the machine is safe
-  })
-
   it('--dry --json: stdout parses to a DTO with no context, exit OK', async () => {
     const cap = capture()
     const code = await run(['ask', 'greet', '--dry', '--json'], {

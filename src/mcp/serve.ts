@@ -1,4 +1,5 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { loadEnvFile } from '../boot/loadEnvFile.js'
 import { buildEngine, isDirectRun, resolveCorpusSource } from '../consume/index.js'
 import { buildMcpServer } from './server.js'
 
@@ -41,6 +42,7 @@ export async function startMcpServer(): Promise<void> {
 // Import-safe: open stdio only when executed directly (`node dist/…`, the linked bin, etc.),
 // never on import (keeps tests + tooling side-effect free) — realpath-safe guard (TKT-447).
 if (isDirectRun(process.argv[1], import.meta.url)) {
+  loadEnvFile() // auto-load a project-root .env (real exports still win) — before any env read
   startMcpServer().catch((err: unknown) => {
     process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`)
     process.exit(1)

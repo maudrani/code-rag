@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-import { assertDenseAskSafe, buildEngine, isDirectRun } from '../consume/index.js'
+import { loadEnvFile } from '../boot/loadEnvFile.js'
+import { buildEngine, isDirectRun } from '../consume/index.js'
 import { EXIT } from './errors.js'
 import { type RunDeps, run } from './run.js'
 
-/** The shipped runtime wiring (real engine, real streams, real env). */
+/** The shipped runtime wiring (real engine, real streams, real env). The heat guard now lives in
+ *  buildEngine, so every consumer — not just the CLI — is protected from a cold whole-repo dense embed. */
 function realDeps(): RunDeps {
   return {
     buildEngine,
@@ -11,9 +13,6 @@ function realDeps(): RunDeps {
     stderr: process.stderr,
     env: process.env,
     isTTY: process.stdout.isTTY ?? false,
-    // the heat guard is wired ONLY in the shipped CLI (tests build their own deps + opt out), so a real
-    // `code-rag ask` can never cold-embed a whole repo by accident and freeze the machine.
-    assertDenseAskSafe,
   }
 }
 
@@ -25,6 +24,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 // Import-safe: auto-run only when executed directly (`node dist/…`, `tsx src/…`, or the
 // `code-rag` bin via `npm link`), never on import — the realpath-safe guard (TKT-447).
 if (isDirectRun(process.argv[1], import.meta.url)) {
+  loadEnvFile() // auto-load a project-root .env (real exports still win) — before any env read
   main()
     .then((code) => process.exit(code))
     .catch((err: unknown) => {
