@@ -105,6 +105,30 @@ describe('LiveListenerTab', () => {
     expect(screen.getByText(/structural score/i)).toBeInTheDocument()
   })
 
+  it('reveals the files a query surfaced when the entry carries resultPaths (no re-query, no pollution)', async () => {
+    const fake = new FakeEventSource()
+    const user = userEvent.setup()
+    render(<LiveListenerTab createEventSource={() => fake} />)
+
+    act(() => {
+      fake.open()
+      fake.emit(
+        'entry',
+        JSON.stringify(
+          entry({
+            queryId: 'q-files',
+            resultPaths: ['source/core/Ky.ts', 'source/utils/delay.ts'],
+          }),
+        ),
+      )
+    })
+    await user.click(screen.getByRole('button', { expanded: false }))
+
+    const files = screen.getByTestId('ledger-files')
+    expect(within(files).getByText('source/core/Ky.ts')).toBeInTheDocument()
+    expect(within(files).getByText('source/utils/delay.ts')).toBeInTheDocument()
+  })
+
   it('tags each entry with its L5 outcome: the model, "deterministic", or "refused · $0"', () => {
     const fake = new FakeEventSource()
     render(<LiveListenerTab createEventSource={() => fake} />)

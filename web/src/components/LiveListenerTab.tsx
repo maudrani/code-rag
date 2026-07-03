@@ -131,6 +131,24 @@ function LedgerRow({ entry }: { entry: QueryLogEntry }) {
               />
             ))}
           </dl>
+          {entry.resultPaths && entry.resultPaths.length > 0 ? (
+            <div className="mt-2" data-testid="ledger-files">
+              <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Files surfaced
+              </dt>
+              <ul className="mt-1 flex flex-col gap-0.5">
+                {entry.resultPaths.map((path) => (
+                  <li
+                    key={path}
+                    className="truncate font-mono text-[11px] text-foreground"
+                    title={path}
+                  >
+                    {path}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </li>

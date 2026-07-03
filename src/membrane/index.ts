@@ -271,12 +271,17 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     // byte-identical swap of the prior inline spread that makes the DD-1 leg-sum invariant
     // unit-assertable (fresh copy of the TOP result's per-leg scores; all-zero if none).
     const scoresByLeg = topScoresByLeg(results)
+    // The distinct files this query surfaced, in rank order (a file with many chunks appears once),
+    // capped so a ledger line stays small. Lets the Live feed show WHICH code a query returned without
+    // re-running the search (the per-card re-query that used to pollute the ledger).
+    const resultPaths = [...new Set(results.map((r) => r.chunk.path))].slice(0, 12)
     ledger.push({
       ts: now(),
       queryId,
       consumer: intent,
       query: question,
       resultCount: results.length,
+      resultPaths,
       scoresByLeg,
       band: projection.decision.band,
       // FTR-3 P1: the routing decision, per query (from the gate SSOT; reused, not re-derived).

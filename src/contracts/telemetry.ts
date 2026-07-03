@@ -57,6 +57,10 @@ export interface QueryLogEntry {
   consumer: Consumer
   query: string
   resultCount: number
+  /** the distinct files the retrieval returned, in rank order (deduped, capped). Lets a ledger
+   *  consumer show WHICH code a query surfaced without re-running the search (no ledger pollution).
+   *  OPTIONAL for back-compat with pre-existing ledger lines that predate the field. */
+  resultPaths?: string[]
   /** top fused contribution per leg — the per-leg breakdown a specialist reviews. */
   scoresByLeg: Record<Leg, number>
   band: 'refuse' | 'answer'
