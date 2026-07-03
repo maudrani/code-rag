@@ -1,0 +1,14 @@
+{
+  "// note": "Copy to a repo-root .mcp.json your coding agent auto-loads (Claude Code / Cursor / Codex), then reopen the repo / reconnect MCP. Run `npm run build` first — the bin runs from dist/. Retrieval is heat-safe: the dense (ONNX) leg is OFF by default (BM25 + structural — fully offline, no ~25MB model download, never freezes); enabling it over a whole repo is refused with an actionable message. CORPUS_PATH=src scopes the index so the first tool call returns in seconds; CODE_RAG_INDEX keeps it warm across restarts. ANTHROPIC_API_KEY expands from your shell env — search and ask --dry need no key at all. No-build alternative: set command to `npx` and args to [\"tsx\", \"src/mcp/serve.ts\"]. ALREADY HAVE a .mcp.json? Don't overwrite it — MERGE the code-rag block into your existing \"mcpServers\".",
+  "mcpServers": {
+    "code-rag": {
+      "command": "node",
+      "args": ["dist/src/mcp/serve.js"],
+      "env": {
+        "CORPUS_PATH": "src",
+        "CODE_RAG_INDEX": ".code-rag/index.db",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+      }
+    }
+  }
+}
