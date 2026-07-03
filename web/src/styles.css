@@ -636,6 +636,93 @@ main {
 .markdown p {
   margin: 6px 0;
 }
+/* The global reset flattened every block element the LLM emits (headings read at body size, lists lost
+   their markers, tables lost borders + cell padding so cells ran together). Restore a readable document
+   scale for the answer subtree only, using the theme tokens. */
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 16px 0 8px;
+}
+.markdown h1 {
+  font-size: 1.4em;
+}
+.markdown h2 {
+  font-size: 1.2em;
+}
+.markdown h3 {
+  font-size: 1.05em;
+}
+.markdown h4 {
+  font-size: 0.95em;
+}
+.markdown ul,
+.markdown ol {
+  margin: 8px 0;
+  padding-left: 1.5em;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown li {
+  display: list-item;
+  margin: 3px 0;
+}
+.markdown li::marker {
+  color: var(--muted-foreground);
+}
+.markdown li > ul,
+.markdown li > ol {
+  margin: 3px 0;
+}
+/* Tables: block + horizontal scroll so a wide table never breaks the bubble layout. */
+.markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 0.9em;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.markdown th {
+  background: var(--panel-2);
+  font-weight: 600;
+}
+.markdown blockquote {
+  margin: 8px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+.markdown strong {
+  font-weight: 600;
+}
+.markdown em {
+  font-style: italic;
+}
+.markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+}
 
 /* In-context code readability: a turn that opens a source view uses the full column width (not the
    80% assistant bubble), and the cited lines get inner breathing room. */
