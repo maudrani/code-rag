@@ -27,6 +27,21 @@ describe('DecisionBadge', () => {
     expect(screen.getByText('cheap')).toBeInTheDocument()
   })
 
+  it('projected (Manual search): the model reads "would route to <model>" — no LLM was called', () => {
+    const decision: GateDecision = {
+      groundingScore: 0.0177,
+      band: 'answer',
+      tier: 'strong',
+      model: 'claude-sonnet-4-6',
+    }
+    render(<DecisionBadge decision={decision} projected />)
+    // it must NOT present the model as if it answered — it is the route the gate WOULD take
+    expect(screen.getByText('would route to claude-sonnet-4-6')).toBeInTheDocument()
+    expect(screen.queryByText('claude-sonnet-4-6')).not.toBeInTheDocument()
+    expect(screen.getByText('answer')).toBeInTheDocument() // band + grounding are real (computed by /search)
+    expect(screen.getByText(/0\.018/)).toBeInTheDocument() // 0.0177.toFixed(3) → "0.018"
+  })
+
   it('refuse band: shows refused + grounding, but NOT a tier (tier is moot on refuse)', () => {
     render(
       <DecisionBadge

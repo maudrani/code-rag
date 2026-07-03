@@ -143,7 +143,9 @@ export function ManualSearchTab({ baseUrl }: { baseUrl?: string }) {
         // within the pane instead of stretching the page.
         <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
           <div className="flex min-w-0 flex-col gap-3">
-            <DecisionBadge decision={projection.decision} />
+            {/* projected: /search computes the gate decision but calls no LLM — the model is the route it
+                WOULD take, not one that answered (keeps the "no LLM, no cost" promise honest). */}
+            <DecisionBadge decision={projection.decision} projected />
             <ResultsList
               results={projection.results}
               onOpen={(result) => setSource({ chunk: result.chunk })}
