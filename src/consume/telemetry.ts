@@ -10,6 +10,7 @@ import type {
   QueryLogEntry,
   SymbolEntry,
 } from '../contracts/index.js'
+import { readLedger } from './ledger.js'
 
 /**
  * The telemetry read-surface SSOT (ADR-012 / observability design §5.2). The CLI,
@@ -92,6 +93,33 @@ export function getStats(engine: Observable, layer?: StatsLayer): EngineTelemetr
   const snapshot = engine.telemetry()
   if (layer === undefined) return snapshot
   return { layer, data: selectLayer(snapshot, layer) }
+}
+
+/**
+ * ledgerLayerStats — the retrieve/answer layer read from the SHARED ledger (cross-consumer), for a
+ * fresh process that ran no query of its own. `retrieve`/`answer` are per-query + in-memory, so a bare
+ * `code-rag stats --layer retrieve` shows null even though the web (a long-running server that HAS run
+ * queries) shows them — the Observability tab promotes a command that standalone reads empty. Reading
+ * CODE_RAG_LEDGER's newest entry closes that gap: `retrieve` IS the newest QueryLogEntry; `answer` is
+ * the newest ANSWERED entry's L5 telemetry (a --dry / search entry has no L5, so it stays honestly null).
+ * The membrane never sees this — it is a consume-side read-surface fallback, gated on the env being set.
+ */
+export function ledgerLayerStats(layer: 'retrieve' | 'answer', ledgerPath: string): LayerStats {
+  const entries = readLedger(ledgerPath) // newest-first, reconciled (retrieve ⊕ outcome)
+  if (layer === 'retrieve') return { layer, data: entries[0] ?? null }
+  const answered = entries.find((e) => e.answered === true)
+  const data: AnswerTelemetry | null = answered
+    ? {
+        band: answered.band === 'refuse' ? 'refuse' : 'answer',
+        // tier + model ARE on the entry (populated at L4 from the gate decision, FTR-3 P1); fall back
+        // only for a pre-FTR-3 ledger line that predates the fields.
+        tier: answered.tier ?? 'cheap',
+        model: answered.model ?? '(unknown)',
+        tokens: answered.tokens ?? 0,
+        estCost: answered.estCost ?? 0,
+      }
+    : null
+  return { layer, data }
 }
 
 /** getHealth — the aggregate health surface (CLI exits non-zero on 'down'; HTTP 200/503). */

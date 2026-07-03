@@ -1,4 +1,4 @@
-import type { AskOptions } from '../consume/index.js'
+import type { AskOptions, LayerStats } from '../consume/index.js'
 import {
   ask,
   buildEngine,
@@ -6,6 +6,7 @@ import {
   getLog,
   getStats,
   getSymbolsPayload,
+  ledgerLayerStats,
   readLedger,
   resolveCorpusSource,
   resolveLedgerPath,
@@ -105,7 +106,18 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
     if (cmd.command === 'stats') {
       const engine = makeReadEngine()
       await engine.ingest() // TKT-449: build the index so a one-shot stats reports real numbers, not null
-      const payload = cmd.layer === undefined ? getStats(engine) : getStats(engine, cmd.layer)
+      let payload = cmd.layer === undefined ? getStats(engine) : getStats(engine, cmd.layer)
+      // retrieve/answer are per-query + in-memory, so a fresh `code-rag stats` process (which ran no
+      // query of its own) shows them null — even though the web, promoting the SAME command, shows them
+      // (its long-running server HAS queried). Fall back to the shared ledger (cross-consumer) so the
+      // CLI command the Observability tab prints actually works: the last query from ANY consumer.
+      if (
+        (cmd.layer === 'retrieve' || cmd.layer === 'answer') &&
+        (payload as LayerStats).data === null
+      ) {
+        const ledgerPath = resolveLedgerPath(deps.env)
+        if (ledgerPath !== undefined) payload = ledgerLayerStats(cmd.layer, ledgerPath)
+      }
       deps.stdout.write(cmd.json ? `${telemetryJson(payload)}\n` : humanStats(payload))
       return EXIT.OK
     }

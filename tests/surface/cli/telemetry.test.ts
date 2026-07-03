@@ -202,6 +202,98 @@ describe('run — telemetry commands (TKT-418)', () => {
   })
 })
 
+// ─── stats retrieve/answer — SHARED-ledger fallback (the Observability-tab command) ───────────────
+describe('run — stats --layer retrieve/answer reads the shared ledger cross-process', () => {
+  let dir = ''
+  let file = ''
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'stats-ledger-'))
+    file = join(dir, 'ledger.jsonl')
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  // A fresh `code-rag stats` process ran no query of its own, so retrieve/answer are null in-memory —
+  // even though the web promotes the SAME command and shows them (its long-running server HAS queried).
+  // These lock the fix: the CLI falls back to CODE_RAG_LEDGER so the printed command actually works.
+  const noQueryEngine = () => makeMockEngine({ telemetry: { ...MOCK_TELEMETRY, lastQuery: null } })
+  const statsDeps = (env: NodeJS.ProcessEnv): { deps: RunDeps; out: () => string } => {
+    let outBuf = ''
+    return {
+      deps: {
+        buildEngine: noQueryEngine,
+        stdout: {
+          write: (s) => {
+            outBuf += s
+            return true
+          },
+        },
+        stderr: { write: () => true },
+        env,
+      },
+      out: () => outBuf,
+    }
+  }
+
+  it('retrieve: with no in-process query, surfaces the shared ledger newest entry (ANY consumer)', async () => {
+    new JsonlLedgerSink(file).append({
+      ts: 1,
+      queryId: 'q1',
+      consumer: 'web', // a query issued by the WEB — the CLI stats must still see it
+      query: 'how does ky retry',
+      resultCount: 3,
+      scoresByLeg: { bm25: 0.4, dense: 0, structural: 0.1 },
+      band: 'answer',
+      latencyMs: 12,
+    })
+    const { deps, out } = statsDeps({ NO_COLOR: '1', CODE_RAG_LEDGER: file })
+
+    const code = await run(['stats', '--layer', 'retrieve', '--json'], deps)
+
+    expect(code).toBe(0)
+    const payload = JSON.parse(out().trim())
+    expect(payload.data).not.toBeNull() // NOT null — the fallback filled it from the shared file
+    expect(payload.data.query).toBe('how does ky retry') // the cross-consumer entry
+    expect(payload.data.consumer).toBe('web')
+  })
+
+  it('answer: surfaces the newest ANSWERED entry’s L5 telemetry (real tier/model/tokens/cost)', async () => {
+    const sink = new JsonlLedgerSink(file)
+    sink.append({
+      ts: 1,
+      queryId: 'q1',
+      consumer: 'web',
+      query: 'how does ky retry',
+      resultCount: 3,
+      scoresByLeg: { bm25: 0.4, dense: 0, structural: 0.1 },
+      band: 'answer',
+      tier: 'cheap', // populated at L4 from the gate decision — the answer layer must echo it, not guess
+      model: 'claude-haiku',
+      latencyMs: 12,
+    })
+    sink.appendOutcome({ queryId: 'q1', answered: true, tokens: 42, estCost: 0.001 })
+    const { deps, out } = statsDeps({ NO_COLOR: '1', CODE_RAG_LEDGER: file })
+
+    await run(['stats', '--layer', 'answer', '--json'], deps)
+
+    const payload = JSON.parse(out().trim())
+    expect(payload.data).toEqual({
+      band: 'answer',
+      tier: 'cheap',
+      model: 'claude-haiku',
+      tokens: 42,
+      estCost: 0.001,
+    })
+  })
+
+  it('NON-VACUITY: retrieve stays honestly null when CODE_RAG_LEDGER is unset (no in-process query either)', async () => {
+    const { deps, out } = statsDeps({ NO_COLOR: '1' }) // no ledger configured
+
+    await run(['stats', '--layer', 'retrieve', '--json'], deps)
+
+    expect(JSON.parse(out().trim()).data).toBeNull() // no fabrication — null is the honest answer
+  })
+})
+
 // ─── e2e (real subprocess via tsx, NO API key) ────────────────────────────────
 const here = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = join(here, '..', '..', '..')

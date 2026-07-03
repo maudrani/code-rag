@@ -51,6 +51,7 @@ export {
   getSymbolsPayload,
   isConsumer,
   isStatsLayer,
+  ledgerLayerStats,
   STATS_LAYERS,
   selectLayer,
 } from './telemetry.js'
