@@ -149,53 +149,78 @@ even L5 is gated to the smallest model that fits.
 
 ## Run it
 
-The only key is `ANTHROPIC_API_KEY` — **embeddings run locally**. `query`, `search`,
-and the trace work without it; streamed *answers* need it.
+The only key is `ANTHROPIC_API_KEY`, and only for a *streamed answer* — **embeddings run locally**, so
+`search` / `stats` / `ask --dry` / the trace need no key. Copy `.env.example` to `.env` (auto-loaded by
+the CLI, server, and MCP; real exports + compose env still win) or pass the vars inline.
+
+**One safety rule.** The dense (ONNX) leg embeds the corpus on-device the first time, and a cold
+whole-repo embed is CPU-heavy — so dense is **opt-in**. The default is BM25 + structural (instant, fully
+offline, never freezes); `CODE_RAG_DENSE=true` enables the semantic leg. Enabling it over a whole repo is
+*refused* with an actionable message on every consumer, so scope `CORPUS_PATH` first.
+
+### Docker — the whole stack, one command
 
 ```bash
-# 1. backend — HTTP server on :8787, self-indexes the repo on first request
-npm install
-ANTHROPIC_API_KEY=sk-... npm run serve
-
-# 2. web UI — point it at the backend (the only wiring needed)
-cd web && npm install
-VITE_API_BASE=http://localhost:8787 npm run dev
+ANTHROPIC_API_KEY=sk-... docker compose up --build   # server :8787 + web UI :5173, both built in-image
 ```
 
-```bash
-# the same engine in the terminal — --dry is deterministic, no key, $0
-npm run cli -- ask "how does retrieval fuse the legs" --dry
-ANTHROPIC_API_KEY=sk-... npm run cli -- ask "how does the score gate work"
+Open <http://localhost:5173>. BM25 by default (no freeze); scope with `CORPUS_PATH=./src`, or index a git
+repo with `CODE_RAG_REPO=<url>`. Opt into dense later with `CODE_RAG_DENSE=true` on a scoped corpus.
 
-# or as an MCP server for an editor agent (Claude Code / Cursor) — see examples/mcp.json
-npm run mcp
-```
+### Local — Node 20+, the same engine
 
 ```bash
-# packaged — the whole stack in Docker, or the compiled bin (no tsx)
-docker compose up --build      # server :8787 + web UI in one command
-npm run build                  # emits a runnable dist (tree-sitter grammar copied into dist)
+npm install && npm run build     # dist/ + the tree-sitter grammar copy; a CI run-it step guards the bin
+
+# a safe first query — deterministic, offline, no key, $0
 node dist/src/cli/index.js ask "how does retrieval fuse the legs" --dry
+# a streamed answer (needs the key; still dense-off = heat-safe)
+ANTHROPIC_API_KEY=sk-... node dist/src/cli/index.js ask "how does the score gate work"
+
+# the HTTP server + web UI in dev
+CORPUS_PATH=src npm run serve
+cd web && npm install && VITE_API_BASE=http://localhost:8787 npm run dev
 ```
 
-**Scoping the corpus + snappy restarts.** `CORPUS_PATH` sets what to index (default: this repo);
-it applies to the server, CLI, and MCP alike (`CORPUS_PATH=src npm run serve`). The first index is a
-cold *local* embed — seconds for a small tree, a minute or two for a large repo — so for a big
-codebase point `CORPUS_PATH` at the subtree you care about. `CODE_RAG_INDEX` persists the index
-(warm-restart): a second run re-embeds only files whose mtime/size changed, so startup drops to
-seconds. `examples/mcp.json` ships both, so an editor agent starts *scoped and warm* rather than
-cold-indexing the whole repo.
+`npm link` once for a global `code-rag` (`code-rag ask … --dry`). `search`/`stats`/`health`/`log`/
+`symbols` and `--dry` need no key; only a streamed `ask` does.
 
-**The `code-rag` command.** The bin is `dist/src/cli/index.js`. After `npm run build`, either run it
-directly (`node dist/src/cli/index.js ask … --dry`, above) or `npm link` once to get a global
-`code-rag` (`code-rag ask … --dry`). `search`/`stats`/`health`/`log`/`symbols` and `--dry` need no
-key; only a streamed `ask` does. A CI run-it step builds and runs `code-rag --help`, so the bin
-cannot ship broken.
+### Opt into dense (higher recall, CPU-heavy)
+
+Dense lifts overall recall +83% and exact-id search to 1.00 — turn it on once the corpus is scoped:
+
+```bash
+CORPUS_PATH=src CODE_RAG_DENSE=true CODE_RAG_INDEX=.code-rag/index.db npm run serve
+```
+
+`CODE_RAG_INDEX` persists the index so a 2nd run re-embeds only changed files (warm restart). To index
+another repo, `code-rag ask --repo <git-url> "…"` clones it to a warm cache.
+
+### Use it from your coding agent (MCP)
+
+```bash
+npm run build && cp .mcp.json.example .mcp.json   # already have a .mcp.json? merge the "code-rag" block
+export ANTHROPIC_API_KEY=sk-...                   # optional — only a streamed ask needs it
+```
+
+Reopen the repo in Claude Code / Cursor / Codex (or reconnect MCP) → the code-rag `search` / `ask` /
+`symbols` / `stats` / `health` tools appear, scoped + heat-safe. The agent uses its own subscription, so
+`ask`/`search` cost no per-call API tokens.
 
 Open the printed Vite URL: streaming chat with a grounding/cost badge, clickable citations
 into a source viewer, a live L0→L5 trace rail, a manual-search tab that shows the per-leg
 scores, and an **Observability** tab (per-layer L1→L5 telemetry + health, read over the wire).
 The whole pipeline is also usable in-process via the package (`createEngine`).
+
+### Known limitations (running it)
+
+- **Dense is opt-in** — the on-device cold embed is CPU-heavy, so the default is BM25 + structural
+  (fully offline, no ~25 MB download). A >200-file cold dense-embed is refused on every consumer.
+- **Cross-OS** — Node 20+; the Docker base is `node:20-slim` (glibc) **not** alpine, because
+  `onnxruntime-node` / `better-sqlite3` need glibc prebuilds. `VITE_API_BASE` is baked into the web
+  bundle at build time, so remapping the server port needs a rebuild. macOS dense needs
+  `onnxruntime-node ≥1.24.3` (pinned).
+- **Warm restart** — the first index is cold; `CODE_RAG_INDEX` makes reruns warm (mtime/size delta).
 
 ---
 
@@ -257,9 +282,10 @@ history stays a clean, attributed, per-layer narrative.
 - **Structural eval is a floor** — the gold set targets symbol *definitions*, so it
   under-counts the structural leg's real value on "where is X used / how does this
   subsystem work" queries.
-- **Cold-start** — the first live query embeds the corpus (minutes on a large repo). The index now
-  persists with a stat-only (mtime+size) warm-restart that re-embeds only changed files; wiring it
-  into the server's lazy self-index is the remaining step.
+- **Cold-start** (dense only) — with `CODE_RAG_DENSE=true`, the first live query embeds the corpus
+  (minutes on a large repo); the default BM25 path is instant. The index persists with a stat-only
+  (mtime+size) warm-restart that re-embeds only changed files; wiring it into the server's lazy
+  self-index is the remaining step.
 - **Reranker** — grounding now ORs lexical overlap with the raw dense cosine (the absolute signal
   RRF ranks can't express). The remaining precision lever is a cross-encoder **reranker** applied
   after fusion on the top-K.

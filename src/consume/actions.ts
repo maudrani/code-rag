@@ -35,7 +35,7 @@ export function resolveEngineConfig(
  * CODE_RAG_DENSE → boolean | undefined (TKT-448). false/0/off/no → false (BM25+structural only:
  * fully offline, no ~25MB model download, heat-safe — one ONNX at a time); true/1/on/yes → true.
  * Unset / empty / anything else → undefined, so it falls through to the membrane default
- * (dense on in a live process) — behaviour is UNCHANGED unless the switch is set on purpose.
+ * (dense OFF — opt-in): BM25 + structural, heat-safe. Set the switch on purpose to enable dense.
  */
 function parseDense(raw: string | undefined): boolean | undefined {
   if (raw === undefined) return undefined
