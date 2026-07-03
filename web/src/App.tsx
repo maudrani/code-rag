@@ -79,20 +79,28 @@ export function App() {
         </nav>
       </header>
       <div className="layout">
+        {/* All four tabs stay MOUNTED; only the active one is visible (display:contents keeps the
+            active child a direct grid/flex item of layout__main, so its layout is unchanged, while
+            the inactive ones are display:none). Switching tabs therefore PRESERVES each tab's state —
+            the chat transcript, the manual-search results, and the live feed survive a tab change
+            instead of being unmounted and reset. sessionKey still remounts them all on a repo change. */}
         <div className="layout__main" key={sessionKey}>
-          {tab === 'chat' ? (
+          <div style={{ display: tab === 'chat' ? 'contents' : 'none' }}>
             <ChatView
               options={{ baseUrl: API_BASE }}
               onActiveQuery={setQueryId}
               onActiveTelemetry={setTelemetry}
             />
-          ) : tab === 'search' ? (
+          </div>
+          <div style={{ display: tab === 'search' ? 'contents' : 'none' }}>
             <ManualSearchTab baseUrl={API_BASE} />
-          ) : tab === 'observability' ? (
+          </div>
+          <div style={{ display: tab === 'observability' ? 'contents' : 'none' }}>
             <ObservabilityTab baseUrl={API_BASE} />
-          ) : (
+          </div>
+          <div style={{ display: tab === 'live' ? 'contents' : 'none' }}>
             <LiveListenerTab baseUrl={API_BASE} />
-          )}
+          </div>
         </div>
         {/* The trace rail is bound to the chat's active queryId — chat-only (search + observability
             render full-width). */}

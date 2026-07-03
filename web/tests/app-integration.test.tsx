@@ -44,4 +44,31 @@ describe('App integration (whole UI against the mock wire)', () => {
     await user.click(screen.getByRole('button', { name: /manual search/i }))
     expect(screen.getByRole('textbox', { name: /search query/i })).toBeInTheDocument()
   })
+
+  it('PRESERVES a tab across a switch: the streamed answer survives leaving + returning to Chat', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        body: streamFromString(
+          encodeSse(makeQueryStream(answerProjection, { answer: ANSWER_TEXT })),
+          16,
+        ),
+      })),
+    )
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.type(screen.getByRole('textbox', { name: /message/i }), 'how does the membrane work')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByText(ANSWER_TEXT)).toBeInTheDocument())
+
+    // leave Chat for Manual search, then return — the old conditional render UNMOUNTED chat here,
+    // wiping the transcript; now the tabs stay mounted (display toggles) so the answer persists.
+    await user.click(screen.getByRole('button', { name: /manual search/i }))
+    await user.click(screen.getByRole('button', { name: /^chat$/i }))
+
+    expect(screen.getByText(ANSWER_TEXT)).toBeInTheDocument()
+  })
 })
