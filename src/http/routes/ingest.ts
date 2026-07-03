@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { type CloneDeps, isRepoUrl, resolveCorpus, writeActiveCorpus } from '../../consume/index.js'
 import type { Engine, IngestReport } from '../../contracts/engine.js'
+import type { CorpusHolder } from './corpus.js'
 
 interface IngestRequest {
   url?: unknown
@@ -17,7 +18,11 @@ interface IngestRequest {
  * clone. M1 is synchronous + public-repo (a spinner client-side); SSE progress + private-token-over-web +
  * auth/rate-limit are documented productionize follow-ups.
  */
-export function ingestRoutes(engine: Engine, deps: { clone?: CloneDeps['clone'] } = {}): Hono {
+export function ingestRoutes(
+  engine: Engine,
+  deps: { clone?: CloneDeps['clone'] } = {},
+  corpus?: CorpusHolder,
+): Hono {
   const app = new Hono()
 
   app.post('/ingest', async (c) => {
@@ -55,6 +60,10 @@ export function ingestRoutes(engine: Engine, deps: { clone?: CloneDeps['clone'] 
     // Publish the choice to the shared CODE_RAG_STATE pointer (opt-in) so the CLI/MCP/server follow this
     // web ingest as the active corpus. Runs in the SERVER process → default env; a no-op when unset.
     writeActiveCorpus({ url, path: dir })
+
+    // Update THIS server's in-memory identity so GET /corpus (which the web reads on load) reflects the
+    // now-active repo — the chip stays truthful across reloads without depending on the state file.
+    if (corpus !== undefined) corpus.url = url
 
     // activeCorpus = the human identity (the URL the client asked for). M1 public-repo → no token here,
     // so nothing sensitive is echoed. The IngestReport tells the client what got indexed.

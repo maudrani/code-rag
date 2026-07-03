@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
 import type { Engine } from '../contracts/engine.js'
 import type { Observable } from '../contracts/telemetry.js'
+import { corpusRoutes } from './routes/corpus.js'
 import { ingestRoutes } from './routes/ingest.js'
 import { ledgerRoutes } from './routes/ledger.js'
 import { queryRoutes } from './routes/query.js'
@@ -28,8 +29,16 @@ export interface BuiltApp {
  * The Engine is a parameter (DI) so this is unit-testable with a mock and the
  * production entrypoint (server.ts) owns the real `createEngine` wiring.
  */
-export function buildApp(engine: Engine & Observable, ledgerPath?: string): BuiltApp {
+export function buildApp(
+  engine: Engine & Observable,
+  ledgerPath?: string,
+  initialCorpusUrl: string | null = null,
+): BuiltApp {
   const app = new Hono()
+  // The server's active-corpus identity, shared (by reference) between POST /ingest (writer) and
+  // GET /corpus (reader). Initialised from the shared CODE_RAG_STATE pointer at startup so a corpus a
+  // prior/other consumer selected is reflected too; null = the default self-indexed corpus.
+  const corpus = { url: initialCorpusUrl }
   // The standalone web UI runs on a different origin (the Vite dev server), so the
   // browser needs CORS to call this API (preflight + Access-Control-Allow-Origin).
   // Permissive for clone-and-run; a real deploy should pin the allowed origin.
@@ -41,7 +50,11 @@ export function buildApp(engine: Engine & Observable, ledgerPath?: string): Buil
   app.route('/', queryRoutes(engine))
   app.route('/', searchRoutes(engine))
   // POST /ingest — clone a repo URL + reindex the active corpus (FTR-5 P4); the real cloner by default.
-  app.route('/', ingestRoutes(engine))
+  // Passes the corpus holder so a successful ingest updates the identity GET /corpus reports.
+  app.route('/', ingestRoutes(engine, {}, corpus))
+  // GET /corpus — the active-corpus identity the web reads on load so its chip reflects the real server
+  // corpus (not just this browser's own ingest) — the single source of truth across consumers.
+  app.route('/', corpusRoutes(corpus))
   // telemetry read-surfaces (GET /stats, /health, /log) — replaces the old stub /health
   // with the real engine.health() (observability §5.2).
   app.route('/', telemetryRoutes(engine))

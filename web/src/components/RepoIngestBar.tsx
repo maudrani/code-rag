@@ -1,5 +1,6 @@
 import { FolderGit2, Loader2 } from 'lucide-react'
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
+import { fetchActiveCorpus } from '../clients/corpusClient'
 import { ingest } from '../clients/ingestClient'
 import type { IngestResponse } from '../contract'
 import { repoLabel } from '../lib/repoLabel'
@@ -39,6 +40,20 @@ export function RepoIngestBar({
     }
   }, [])
 
+  // On load, sync the chip to the corpus the SERVER is actually serving (GET /corpus) — so a repo
+  // ingested from the CLI/MCP/a prior session shows here too, instead of the chip being stuck on
+  // "self-indexed" while chat/search already answer over that repo (the single source of truth).
+  // Guarded ONLY by mountedRef (stable across renders): a per-run `active` flag races StrictMode's
+  // double-invoke — the two setups fire two fetches and the flag can drop the surviving one, leaving the
+  // chip stale. `prev ?? …` never overrides a repo THIS browser just ingested. fetchActiveCorpus
+  // swallows errors to { url: null }, so a failed call simply leaves the chip on "self-indexed".
+  useEffect(() => {
+    fetchActiveCorpus(baseUrl).then((res) => {
+      const url = res.url
+      if (mountedRef.current && url !== null) setCorpus((prev) => prev ?? { url })
+    })
+  }, [baseUrl])
+
   const submitting = status === 'submitting'
 
   async function onSubmit(event: FormEvent) {
@@ -68,14 +83,17 @@ export function RepoIngestBar({
     }
   }
 
-  /** Clear (TKT-533): wipe the input + the active-corpus chip and reset the working session — App
-   *  remounts the tab views (fresh chat + a re-fetched corpus tree). Frontend state only; the server
-   *  keeps its current corpus until the next ingest. */
+  /** Clear (TKT-533): reset the working session — App remounts the tab views (fresh chat + a re-fetched
+   *  corpus tree). The corpus is a SERVER concept (one engine shared by every consumer), so Clear does NOT
+   *  blank the chip — that would make it lie ("self-indexed" while the server still serves the ingested
+   *  repo). Instead it RE-SYNCS the chip to the server's real corpus; to switch corpus you ingest a repo. */
   function onClearClick() {
     setUrl('')
-    setCorpus(null)
     setErrorMsg('')
     setStatus('idle')
+    fetchActiveCorpus(baseUrl).then((res) => {
+      if (mountedRef.current) setCorpus(res.url !== null ? { url: res.url } : null)
+    })
     onClear?.()
   }
 

@@ -72,3 +72,10 @@ export interface IngestResponse {
   activeCorpus: { url: string }
   ingestReport: IngestReport
 }
+
+// GET /corpus response — the repo URL the SERVER is serving right now (null = default self-indexed).
+// The header reads this on load so the active-corpus chip reflects the real server corpus, not just
+// what this browser ingested (the single source of truth across web/CLI/MCP).
+export interface CorpusResponse {
+  url: string | null
+}

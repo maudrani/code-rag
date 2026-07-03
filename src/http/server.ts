@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import {
   buildEngine,
   isDirectRun,
+  readActiveCorpus,
   resolveCorpusSource,
   resolveLedgerPath,
 } from '../consume/index.js'
@@ -39,7 +40,10 @@ export async function startServer(port: number = resolvePort(process.env.PORT)) 
   // also append to the shared cross-consumer ledger; the same path feeds GET /ledger.
   const engine = buildEngine(corpusPath !== undefined ? { corpusPath } : {})
   const ledgerPath = resolveLedgerPath(process.env)
-  const { app, injectWebSocket } = buildApp(engine, ledgerPath)
+  // If a shared CODE_RAG_STATE pointer selected the corpus (this server, the CLI, or the web), seed the
+  // GET /corpus identity with it so the web chip reflects the real corpus on load; else null (self-indexed).
+  const initialCorpusUrl = readActiveCorpus(process.env)?.url ?? null
+  const { app, injectWebSocket } = buildApp(engine, ledgerPath, initialCorpusUrl)
   const server = serve({ fetch: app.fetch, port })
   injectWebSocket(server)
 
