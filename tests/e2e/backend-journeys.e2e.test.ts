@@ -163,7 +163,9 @@ describe('E2E gate — cross-consumer /ledger (the WOW listener backend)', () =>
 
     const { app } = buildApp(engine, file)
     const body = (await (await app.request('/ledger')).json()) as { entries: QueryLogEntry[] }
-    const entry = body.entries.find((e) => e.queryId === p.queryId)
+    // the shared-file id is the in-process queryId namespaced per process (`<nonce>:<queryId>`), so it
+    // ENDS WITH the wire p.queryId — this is what keeps two processes' `q1`s from colliding in the file.
+    const entry = body.entries.find((e) => e.queryId.endsWith(`:${p.queryId}`))
     expect(entry).toBeDefined()
     expect(entry?.answered).toBe(true) // the 2nd (outcome) line reconciled onto the retrieve line
     expect(entry?.tokens).toBe(20)

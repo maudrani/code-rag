@@ -42,12 +42,20 @@ export type LedgerLine =
  * writers interleave cleanly, no torn lines.
  */
 export class JsonlLedgerSink implements LedgerSink {
+  // A per-process nonce so a query's SHARED-ledger id is GLOBALLY unique. A fresh CLI process resets its
+  // in-process queryId to `q1`, so without this every terminal `code-rag ask` collides on `q1` in the
+  // shared file — the dashboard dedupes them by queryId, so only one ever shows. pid + a monotonic
+  // hrtime is unique per process invocation (and is neither Date.now nor Math.random — determinism-guard
+  // safe). A retrieve line and its outcome line share the nonce, so they still reconcile within a process.
+  private readonly nonce = `${process.pid}-${process.hrtime.bigint().toString(36)}`
   constructor(private readonly path: string) {}
   append(entry: QueryLogEntry): void {
-    appendFileSync(this.path, `${JSON.stringify(entry)}\n`)
+    const queryId = `${this.nonce}:${entry.queryId}`
+    appendFileSync(this.path, `${JSON.stringify({ ...entry, queryId })}\n`)
   }
   appendOutcome(outcome: LedgerOutcome): void {
-    appendFileSync(this.path, `${JSON.stringify(outcome)}\n`)
+    const queryId = `${this.nonce}:${outcome.queryId}`
+    appendFileSync(this.path, `${JSON.stringify({ ...outcome, queryId })}\n`)
   }
 }
 

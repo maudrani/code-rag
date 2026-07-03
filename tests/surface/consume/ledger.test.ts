@@ -55,9 +55,22 @@ describe('JsonlLedgerSink + readLedger — round-trip (TKT-426)', () => {
     sink.append(entry('q2', 'mcp'))
     sink.append(entry('q3', 'mcp'))
 
-    expect(readLedger(file).map((e) => e.queryId)).toEqual(['q3', 'q2', 'q1']) // newest-first
-    expect(readLedger(file, { consumer: 'mcp' }).map((e) => e.queryId)).toEqual(['q3', 'q2'])
-    expect(readLedger(file, { limit: 1 }).map((e) => e.queryId)).toEqual(['q3'])
+    // the sink namespaces queryId per process (globally-unique in the shared file), so assert order via
+    // the unchanged `query` field, and confirm the read ids END WITH the raw in-process q3/q2/q1.
+    expect(readLedger(file).map((e) => e.query)).toEqual(['q3', 'q2', 'q1']) // newest-first
+    expect(readLedger(file)[0]?.queryId).toMatch(/:q3$/) // namespaced id ends with the in-process id
+    expect(readLedger(file, { consumer: 'mcp' }).map((e) => e.query)).toEqual(['q3', 'q2'])
+    expect(readLedger(file, { limit: 1 }).map((e) => e.query)).toEqual(['q3'])
+  })
+
+  it('two PROCESSES writing the same in-process queryId (q1) stay DISTINCT in the shared file', () => {
+    // A fresh CLI/MCP process resets its counter to q1; the sink namespaces per process, so two terminal
+    // runs are NOT deduped into one by the dashboard (the cross-process ledger collision bug).
+    new JsonlLedgerSink(file).append(entry('q1', 'cli'))
+    new JsonlLedgerSink(file).append(entry('q1', 'cli'))
+    const entries = readLedger(file)
+    expect(entries).toHaveLength(2) // both survive — not collapsed to one
+    expect(new Set(entries.map((e) => e.queryId)).size).toBe(2) // globally-unique ids
   })
 
   it('TOLERANT: skips a blank + malformed trailing line (a mid-flight append never throws)', () => {
@@ -109,7 +122,7 @@ describe('L5 outcome — cross-process two-line join (FTR-3 P2, TKT-434)', () =>
     sink.append(entry('q1', 'cli')) // retrieve line — written at query-time, no outcome yet
     sink.appendOutcome({ queryId: 'q1', answered: true, tokens: 42, estCost: 0.001 })
     const [e] = readLedger(file)
-    expect(e?.queryId).toBe('q1')
+    expect(e?.query).toBe('q1') // ONE reconciled entry (the outcome merged onto the retrieve line)
     expect(e?.answered).toBe(true)
     expect(e?.tokens).toBe(42)
     expect(e?.estCost).toBe(0.001)
@@ -121,9 +134,9 @@ describe('L5 outcome — cross-process two-line join (FTR-3 P2, TKT-434)', () =>
     sink.append(entry('q2'))
     sink.appendOutcome({ queryId: 'q1', answered: true, tokens: 10, estCost: 0.002 })
     const out = readLedger(file)
-    expect(out.map((e) => e.queryId)).toEqual(['q2', 'q1']) // newest-first by retrieve order
-    expect(out.find((e) => e.queryId === 'q1')?.answered).toBe(true)
-    expect(out.find((e) => e.queryId === 'q2')?.answered).toBeUndefined() // no outcome for q2
+    expect(out.map((e) => e.query)).toEqual(['q2', 'q1']) // newest-first by retrieve order
+    expect(out.find((e) => e.query === 'q1')?.answered).toBe(true)
+    expect(out.find((e) => e.query === 'q2')?.answered).toBeUndefined() // no outcome for q2
   })
 
   it('ORPHAN outcome (no retrieve line) is dropped — cannot reconstruct a full entry', () => {
@@ -200,7 +213,8 @@ describe('L5 outcome — cross-process two-line join (FTR-3 P2, TKT-434)', () =>
     // process B — a SEPARATE reader of the same file reconciles the two lines by queryId (the bug:
     // a retrieve-only ledger showed every query as 'deterministic' with no tokens/cost).
     const [e] = readLedger(file)
-    expect(e?.queryId).toBe('qX')
+    expect(e?.query).toBe('qX') // reconciled: retrieve + outcome share the per-process nonce
+    expect(e?.queryId).toMatch(/:qX$/) // the shared-file id is namespaced (globally unique), ends with :qX
     expect(e?.answered).toBe(true)
     expect(e?.tokens).toBe(8)
     expect(e?.estCost).toBe(0.005)

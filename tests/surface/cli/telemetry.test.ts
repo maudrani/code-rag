@@ -309,8 +309,10 @@ describe('run log — shared cross-process ledger (CODE_RAG_LEDGER) — TKT-440'
     const code = await run(['log', '--json'], deps)
     expect(code).toBe(0)
     expect(JSON.parse(out().trim())).toEqual({ entries: readLedger(file) })
+    // the sink namespaces queryId per process (globally unique in the shared file); assert order via
+    // the unchanged `query` field. The CLI output still equals readLedger(file) (line above).
     expect(
-      (JSON.parse(out().trim()) as { entries: QueryLogEntry[] }).entries.map((e) => e.queryId),
+      (JSON.parse(out().trim()) as { entries: QueryLogEntry[] }).entries.map((e) => e.query),
     ).toEqual(['q2', 'q1'])
   })
 
@@ -319,7 +321,7 @@ describe('run log — shared cross-process ledger (CODE_RAG_LEDGER) — TKT-440'
     const { deps, out } = logDeps({ NO_COLOR: '1', CODE_RAG_LEDGER: file })
     await run(['log', '--consumer', 'mcp', '--json'], deps)
     expect(
-      (JSON.parse(out().trim()) as { entries: QueryLogEntry[] }).entries.map((e) => e.queryId),
+      (JSON.parse(out().trim()) as { entries: QueryLogEntry[] }).entries.map((e) => e.query),
     ).toEqual(['q2'])
   })
 
