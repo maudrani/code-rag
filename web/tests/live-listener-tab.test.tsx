@@ -228,6 +228,43 @@ describe('LiveListenerTab', () => {
     expect(badge).toHaveAttribute('data-tone', 'deterministic')
   })
 
+  it('UPSERTS a re-emit: a search-only row UPGRADES to its model badge when the L5 outcome lands — not stuck "deterministic", not doubled (the live-feed reconcile bug)', () => {
+    const fake = new FakeEventSource()
+    render(<LiveListenerTab createEventSource={() => fake} />)
+
+    act(() => {
+      fake.open()
+      // 1) the retrieve line arrives first: band answer, no model, answered undefined → 'deterministic'
+      fake.emit('entry', JSON.stringify(entry({ queryId: 'q-up', band: 'answer' })))
+    })
+    expect(screen.getByTestId('ledger-outcome')).toHaveTextContent('deterministic')
+
+    act(() => {
+      // 2) the server re-emits the SAME queryId ENRICHED once L5 completes (answered/model/tokens/cost).
+      // Dedup-by-ignore dropped this → the row stayed 'deterministic' until a refresh. Upsert upgrades it.
+      fake.emit(
+        'entry',
+        JSON.stringify(
+          entry({
+            queryId: 'q-up',
+            band: 'answer',
+            model: 'claude-haiku-4-5',
+            tier: 'cheap',
+            answered: true,
+            tokens: 120,
+            estCost: 0.0005,
+          }),
+        ),
+      )
+    })
+
+    // upgraded IN PLACE: exactly ONE row (upsert, not append), now the model badge, 'deterministic' gone
+    const badges = screen.getAllByTestId('ledger-outcome')
+    expect(badges).toHaveLength(1)
+    expect(badges[0]).toHaveTextContent('claude-haiku-4-5')
+    expect(badges[0]).not.toHaveTextContent('deterministic')
+  })
+
   it('the feed OWNS its scroll (min-h-0 + overflow-y-auto) and cards have a min-height — entries never overflow-clip to nothing (TKT-530)', () => {
     const fake = new FakeEventSource()
     render(<LiveListenerTab createEventSource={() => fake} />)

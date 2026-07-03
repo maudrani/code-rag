@@ -7,7 +7,7 @@ import { type LedgerStatus, type LedgerStreamOptions, openLedgerStream } from '.
 const MAX_ENTRIES = 100
 
 export interface UseLedgerStreamResult {
-  /** newest-first, deduped by queryId, capped at MAX_ENTRIES. */
+  /** newest-first, upserted by queryId (a re-emit upgrades its row in place), capped at MAX_ENTRIES. */
   entries: QueryLogEntry[]
   status: LedgerStatus
   /** truncate the shared ledger on the server, then empty the local feed (survives a refresh). */
@@ -20,8 +20,9 @@ export interface UseLedgerStreamOptions extends LedgerStreamOptions {
 
 /**
  * useLedgerStream — subscribe to the cross-consumer ledger SSE and expose the live feed. Newest
- * entries prepend (they animate in at the top). DEDUP by queryId: a reconnect re-replays the last N
- * entries, so without dedup the feed would double every entry. SSR/jsdom-safe: with no EventSource
+ * entries prepend (they animate in at the top). UPSERT by queryId: the server re-emits a query's
+ * entry enriched when its L5 outcome lands, and a reconnect re-replays the last N entries — so a
+ * repeat queryId REPLACES its row in place (upgrades it, never doubles it). SSR/jsdom-safe: with no EventSource
  * and no injected factory there is nothing to connect to → 'closed'. The factory is read from a ref so
  * a fresh options object per render does not re-open the stream — only baseUrl does.
  */
@@ -43,11 +44,18 @@ export function useLedgerStream(options: UseLedgerStreamOptions = {}): UseLedger
     const handle = openLedgerStream(
       `${baseUrl}/ledger/stream`,
       (entry) =>
-        setEntries((prev) =>
-          prev.some((e) => e.queryId === entry.queryId)
-            ? prev
-            : [entry, ...prev].slice(0, MAX_ENTRIES),
-        ),
+        setEntries((prev) => {
+          // UPSERT by queryId (NOT dedup-by-ignore). The server re-emits a query's entry ENRICHED once
+          // the L5 outcome lands (answered/tier/tokens/estCost) — so an existing row must UPGRADE in
+          // place from 'deterministic' to the real model badge live. Ignoring the re-emit left the row
+          // stuck 'deterministic' until a refresh (the bug); replacing in place also keeps the reconnect
+          // replay from doubling entries (the original dedup's job) and preserves the row's position.
+          const idx = prev.findIndex((e) => e.queryId === entry.queryId)
+          if (idx === -1) return [entry, ...prev].slice(0, MAX_ENTRIES)
+          const next = prev.slice()
+          next[idx] = entry
+          return next
+        }),
       (next) => setStatus(next),
       opts,
     )
