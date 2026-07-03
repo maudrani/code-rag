@@ -242,7 +242,7 @@ describe('CLI telemetry e2e (real engine, no key) — TKT-418', () => {
 
   it('symbols --json: exit 0 + { symbols:[...] } from the real engine over the fixture corpus (no key)', () => {
     // symbols() forces a real index build; point at the tiny fixture corpus so it's fast.
-    // VITEST is inherited by the subprocess → the dense/ONNX leg stays off (membrane denseOn gate).
+    // Dense is opt-in (default OFF), so the subprocess runs BM25 + structural — no ONNX, no model download.
     const res = spawnSync(tsxBin, [cliEntry, 'symbols', '--json'], {
       cwd: repoRoot,
       encoding: 'utf8',

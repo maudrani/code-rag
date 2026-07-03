@@ -18,9 +18,10 @@ export interface EngineConfig {
   /** LLM API key — the ONLY key clone-and-run needs (embeddings are local, ADR-003) */
   apiKey?: string
   /**
-   * enable the local-ONNX dense leg — recall 0.50 / exact-id 1.00 vs 0.273 (BM25+structural only).
-   * Default: ON in a live process, OFF under vitest (the model download would slow the deterministic
-   * suite). First live use downloads the MiniLM model (~25MB); set `false` for instant fully-offline.
+   * enable the local-ONNX dense (semantic) leg — recall 0.50 / exact-id 1.00 vs 0.273 (BM25+structural
+   * only). OPT-IN, default OFF: BM25 + structural is heat-free, fully offline, and needs no ~25MB model
+   * download — and a cold whole-repo dense embed can peg CPU + swap and freeze a laptop. Set `true` (or
+   * CODE_RAG_DENSE=true) for the semantic leg; first live use downloads the MiniLM model (~25MB).
    */
   dense?: boolean
   /**

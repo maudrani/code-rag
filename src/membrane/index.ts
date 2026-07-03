@@ -121,10 +121,12 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     const { chunks, files } = ingestAndChunk(repoPath)
     storeHandle?.close() // release the previous store handle on re-ingest
     await embedderHandle?.dispose?.() // release the previous ONNX pipeline (adopt B2/FTR-038)
-    // Dense ON for a live process (recall 0.50 / exact-id 1.00), OFF under vitest (no 25MB model
-    // download -> fast deterministic tests); `config.dense` overrides either way. buildIndexedStore
-    // threads ONE embedder through index() + retrievalDeps() so the leg is all-or-nothing (FTR-22).
-    const denseOn = config.dense ?? process.env.VITEST === undefined
+    // Dense is OPT-IN (config.dense / CODE_RAG_DENSE=true). The local ONNX embed runs once per chunk, so
+    // a cold whole-repo embed can peg CPU + swap and FREEZE a laptop — the SAFE, zero-config default is
+    // BM25 + structural (heat-free, fully offline, no ~25MB model download). Opt in for the semantic leg
+    // (recall 0.50 / exact-id 1.00). buildIndexedStore threads ONE embedder through index() +
+    // retrievalDeps() so the leg is all-or-nothing (FTR-22).
+    const denseOn = config.dense ?? false
     const embedder = denseOn ? createOnnxEmbedder() : undefined
     embedderHandle = embedder ?? null
     if (config.indexPath) {
@@ -177,7 +179,7 @@ export const createEngine: CreateEngine = (config: EngineConfig = {}): Engine & 
     const started = now()
     await initParser()
     const { chunks, files } = ingestAndChunk(newCorpusPath) // throws on a bad path -> BEFORE any swap
-    const denseOn = config.dense ?? process.env.VITEST === undefined
+    const denseOn = config.dense ?? false
     const embedder = denseOn ? createOnnxEmbedder() : undefined
     const built = await buildIndexedStore(chunks, embedder ? { embedder } : {})
     // ── atomic swap: install the new index, retarget the corpus, then release the old ──

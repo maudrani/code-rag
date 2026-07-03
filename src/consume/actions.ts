@@ -59,18 +59,21 @@ function truthy(raw: string | undefined): boolean {
 }
 
 /**
- * assertDenseAskSafe — refuse to COLD dense-embed a huge corpus, the footgun that freezes the machine:
- * a bare `code-rag ask` from a repo root resolves the corpus to the WHOLE repo and, with the dense leg
- * ON by default, cold-embeds every chunk. This walks the corpus FIRST (cheap — file discovery, no
- * embedding) and throws an ACTIONABLE error above the cap. It is a no-op when the dense leg is off (no
- * ONNX, no heat) or when explicitly overridden. `walkFn` is injected so it is unit-testable offline.
+ * assertDenseAskSafe — a backstop for the ONE remaining heat footgun after dense went opt-in: someone
+ * EXPLICITLY sets CODE_RAG_DENSE=true and then `code-rag ask` self-indexes a whole repo, cold-embedding
+ * every chunk (the local MiniLM runs per chunk → CPU + swap → freeze). Dense is now OFF by default, so a
+ * bare `ask` runs BM25 + structural and is heat-safe — this only guards the explicit dense-on case. It
+ * walks the corpus FIRST (cheap file discovery, no embedding) and throws an ACTIONABLE error above the
+ * cap. No-op unless dense is explicitly on. `walkFn` is injected so it is unit-testable offline.
  */
 export function assertDenseAskSafe(
   corpusDir: string,
   env: NodeJS.ProcessEnv = process.env,
   walkFn: (root: string) => { files: string[] } = walk,
 ): void {
-  if (parseDense(env.CODE_RAG_DENSE) === false) return // dense off -> no ONNX -> heat-safe
+  // Dense is opt-in now: only an EXPLICIT CODE_RAG_DENSE=true can cold-embed. Unset/false → BM25 +
+  // structural (no ONNX, no heat), so a bare `ask` is always safe and must not be blocked.
+  if (parseDense(env.CODE_RAG_DENSE) !== true) return
   if (truthy(env.CODE_RAG_ALLOW_BIG_DENSE)) return // explicit "this box can take it"
   let fileCount: number
   try {
@@ -80,12 +83,12 @@ export function assertDenseAskSafe(
   }
   if (fileCount <= DENSE_COLD_FILE_CAP) return
   throw new Error(
-    `refusing to dense-embed ${fileCount} files from "${corpusDir}" cold — the local embedding model ` +
-      `runs per chunk and this can FREEZE the machine (the >${DENSE_COLD_FILE_CAP}-file whole-repo footgun).\n` +
+    `refusing to dense-embed ${fileCount} files from "${corpusDir}" cold — CODE_RAG_DENSE=true + the ` +
+      `local model runs per chunk, which can FREEZE the machine (the >${DENSE_COLD_FILE_CAP}-file footgun).\n` +
       `Pick one:\n` +
+      `  - drop the dense leg (default): unset CODE_RAG_DENSE — BM25 + structural is heat-safe\n` +
       `  - a smaller corpus:            CORPUS_PATH=src/contracts code-rag ask "..."\n` +
       `  - a specific repo:             code-rag ask --repo <git-url> "..."\n` +
-      `  - turn the dense leg off:      CODE_RAG_DENSE=false code-rag ask "..."   (BM25 + structural, heat-safe)\n` +
       `  - override (you accept the load): CODE_RAG_ALLOW_BIG_DENSE=1 code-rag ask "..."`,
   )
 }
