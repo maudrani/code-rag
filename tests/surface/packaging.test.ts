@@ -26,6 +26,13 @@ describe('packaging: build script config lock (TKT-429 / SC-1, SC-3)', () => {
     expect(pkg.scripts.build).not.toMatch(/\bcp\b|\bmkdir -p\b/) // no POSIX-only shell built-ins
   })
 
+  it('marks the CLI bin executable so the linked `code-rag` runs after a rebuild', () => {
+    // tsc emits dist files 0644; the npm-linked `code-rag` -> dist/src/cli/index.js then hits
+    // "permission denied". The build chmods it +x (a node fs call — no-op-safe on Windows).
+    expect(pkg.scripts.build).toContain('chmodSync')
+    expect(pkg.scripts.build).toContain('dist/src/cli/index.js')
+  })
+
   it('the bin points at the COMPILED entry (dist, not tsx/src)', () => {
     expect(pkg.bin['code-rag']).toBe('dist/src/cli/index.js')
     expect(pkg.bin['code-rag']).not.toContain('tsx')

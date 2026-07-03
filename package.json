@@ -11,7 +11,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"const fs=require('fs'),p='src/chunk/grammars',o='dist/'+p;fs.mkdirSync(o,{recursive:true});for(const f of fs.readdirSync(p))if(f.endsWith('.wasm'))fs.copyFileSync(p+'/'+f,o+'/'+f)\"",
+    "build": "tsc -p tsconfig.json && node -e \"const fs=require('fs'),p='src/chunk/grammars',o='dist/'+p;fs.mkdirSync(o,{recursive:true});for(const f of fs.readdirSync(p))if(f.endsWith('.wasm'))fs.copyFileSync(p+'/'+f,o+'/'+f);fs.chmodSync('dist/src/cli/index.js',0o755)\"",
     "serve": "tsx src/http/server.ts",
     "cli": "tsx src/cli/index.ts",
     "mcp": "tsx src/mcp/serve.ts",
