@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # code-rag — multi-stage image (adopts the docker-node skill: multi-stage, non-root, healthcheck,
 # layer caching, pinned base). ADAPTED: base is node:20-slim (Debian / glibc), NOT alpine —
 # onnxruntime-node + better-sqlite3 ship glibc prebuilds; musl (alpine) would fail to load the
@@ -33,6 +31,19 @@ FROM node:20-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8787
+
+# git: the ONLY runtime OS dep — resolveCorpusSource shells out to `git clone` when CODE_RAG_REPO is set
+# (docker-compose advertises it). node:20-slim ships no git, so without this a CODE_RAG_REPO run crashes
+# on boot. Installed as root before the USER switch; the apt cache is dropped to keep the image slim.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git \
+  && rm -rf /var/lib/apt/lists/*
+
+# The warm-index (CODE_RAG_INDEX=/index) and the shared ledger (CODE_RAG_LEDGER=/data) are compose
+# NAMED VOLUMES. Create + chown their mount points as root NOW so Docker initialises the (empty) volumes
+# with `node` ownership on first `up` — otherwise the non-root process cannot open the SQLite index /
+# write the ledger ("unable to open database file"). A named volume inherits the image dir's ownership.
+RUN mkdir -p /index /data && chown node:node /index /data
 
 # The official node image ships a non-root `node` user (uid 1000) — run as it (docker-node: non-root).
 COPY --from=build --chown=node:node /app/node_modules ./node_modules

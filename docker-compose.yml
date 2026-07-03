@@ -1,10 +1,10 @@
-# docker compose up --build  ->  the code-rag HTTP server on :8787 (+ the web UI on :5173).
+# docker compose up --build  ->  the code-rag HTTP server on :8787 + the web UI on :5173, ONE command.
+# Both images build in-image (the web too — no manual `npm --prefix web run build` first).
 #
-# Env: set ANTHROPIC_API_KEY (the only key clone-and-run needs — embeddings are local; search /
-# --dry need none). CORPUS_PATH picks the host dir to index (mounted read-only). The shared ledger
-# survives restarts and is what the web dashboard tails (the cross-consumer funnel, FTR-46).
-# CODE_RAG_INDEX persists the embedding index (FTR-57 warm-restart) so the 2nd run is snappy
-# (seconds, not minutes — it re-embeds only files whose mtime/size changed).
+# Env: set ANTHROPIC_API_KEY (the only key clone-and-run needs — embeddings are local; search / --dry
+# need none). CORPUS_PATH picks the host dir to index (mounted read-only). The shared ledger survives
+# restarts and is what the web dashboard tails (the cross-consumer funnel, FTR-46). CODE_RAG_INDEX
+# persists the index (FTR-57 warm-restart) so a 2nd run re-embeds only files whose mtime/size changed.
 
 services:
   server:
@@ -20,33 +20,37 @@ services:
       - CODE_RAG_LEDGER=/data/ledger.jsonl
       - CODE_RAG_INDEX=/index/code-rag.db
       # FTR-5: index a git repo instead of the mounted corpus. Set CODE_RAG_REPO=<url> (+ a
-      # CODE_RAG_GITHUB_TOKEN for a private repo) — it clones to a warm cache dir and CODE_RAG_INDEX
-      # keeps the 2nd run snappy. Unset → the CORPUS_PATH mount above is indexed.
+      # CODE_RAG_GITHUB_TOKEN for a private repo) — it clones to a warm cache dir (git is in the image)
+      # and CODE_RAG_INDEX keeps the 2nd run snappy. Unset → the CORPUS_PATH mount above is indexed.
       - CODE_RAG_REPO=${CODE_RAG_REPO:-}
       - CODE_RAG_GITHUB_TOKEN=${CODE_RAG_GITHUB_TOKEN:-}
-      # TKT-448: CODE_RAG_DENSE=false runs BM25+structural only — fully offline (no ~25MB model
-      # download) and heat-safe (no ONNX). Unset → dense on (better recall). Retrieval read-surfaces
-      # (stats/health) always build dense-off regardless, so a telemetry read never loads the model.
+      # Dense is OPT-IN + heat-safe by default: unset → BM25 + structural (fully offline, no ~25MB model
+      # download, no cold-embed, no freeze). Set CODE_RAG_DENSE=true for the local ONNX semantic leg —
+      # but a whole-repo dense embed is refused at startup with an actionable message, so scope
+      # CORPUS_PATH first (e.g. CORPUS_PATH=./src). Read-surfaces (stats/health) are always dense-off.
       - CODE_RAG_DENSE=${CODE_RAG_DENSE:-}
     volumes:
-      # CORPUS_PATH DEFAULTS to the whole repo (a REAL corpus, not a toy subset — the I-1 demo bug); the
-      # walker skips node_modules/dist. A big repo cold-embeds in minutes → CODE_RAG_INDEX warms reruns (TKT-438).
+      # CORPUS_PATH defaults to the whole repo (a REAL corpus, not a toy subset); the walker skips
+      # node_modules/dist. With dense off (default) this is instant BM25 + structural — no embed, no
+      # freeze. With CODE_RAG_DENSE=true the startup guard refuses a >200-file cold embed (scope it).
       - ${CORPUS_PATH:-./}:/corpus:ro   # the repo to index (read-only)
       - ledger:/data                     # the shared cross-consumer ledger (the web tails it)
       - index:/index                     # the warm-restart index (FTR-57): 2nd run re-embeds only changed files
     restart: unless-stopped
 
-  # The standalone web UI (frontend row) — served static by nginx from the Vite build.
-  # Prereq: build it first  ->  `npm --prefix web ci && npm --prefix web run build`  (-> web/dist).
-  # A self-contained web image (a web/Dockerfile with a VITE_API_BASE build-arg) is a frontend follow-up.
+  # The web UI — built in-image (web/Dockerfile: Vite build -> nginx). VITE_API_BASE is baked at build
+  # time; the browser runs on the HOST so it targets the server's published http://localhost:8787.
   web:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8787}
     ports:
       - "5173:80"
-    volumes:
-      - ./web/dist:/usr/share/nginx/html:ro
     depends_on:
-      - server
+      server:
+        condition: service_healthy   # wait for GET /health (the Dockerfile HEALTHCHECK) before serving
     restart: unless-stopped
 
 volumes:
