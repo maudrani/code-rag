@@ -169,7 +169,7 @@ export function LiveListenerTab({
   baseUrl?: string
   createEventSource?: EventSourceFactory
 }) {
-  const { entries, status } = useLedgerStream(
+  const { entries, status, clear } = useLedgerStream(
     createEventSource ? { baseUrl, createEventSource } : { baseUrl },
   )
 
@@ -186,7 +186,20 @@ export function LiveListenerTab({
             <code className="font-mono">/ledger/stream</code>.
           </p>
         </div>
-        <StatusPill status={status} />
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <StatusPill status={status} />
+          {entries.length > 0 ? (
+            <button
+              type="button"
+              data-testid="ledger-clear"
+              onClick={() => void clear()}
+              className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+              title="Truncate the shared ledger — resets the feed for every consumer and survives a refresh"
+            >
+              Clear feed
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {entries.length > 0 ? (

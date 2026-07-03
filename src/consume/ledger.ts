@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Engine } from '../contracts/engine.js'
 import type { Consumer, Observable, QueryLogEntry } from '../contracts/telemetry.js'
 
@@ -123,6 +123,20 @@ export function readLedger(
   if (opts?.consumer !== undefined) out = out.filter((e) => e.consumer === opts.consumer)
   if (opts?.limit !== undefined) out = out.slice(0, opts.limit)
   return out
+}
+
+/**
+ * clearLedger — truncate the shared JSONL to empty (a fresh observability session). Append-only means
+ * a running /ledger/stream tail simply resets its offset on the next poll (lines.length < emitted), and
+ * a reconnect replays nothing — so the reset SURVIVES a browser refresh (unlike clearing only the client
+ * feed). A no-op if the file does not exist yet. NEVER throws on a benign fs race.
+ */
+export function clearLedger(path: string): void {
+  try {
+    if (existsSync(path)) writeFileSync(path, '')
+  } catch {
+    // a concurrent writer/racing unlink must not crash the clear — the next append recreates the file
+  }
 }
 
 /**

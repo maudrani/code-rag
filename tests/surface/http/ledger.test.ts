@@ -147,6 +147,30 @@ describe('GET /ledger — cross-process snapshot (TKT-427)', () => {
   })
 })
 
+describe('DELETE /ledger — truncate the shared ledger for a fresh session', () => {
+  it('empties the file so a subsequent read (and a browser refresh) sees no entries', async () => {
+    seed(file, entry('q1'), entry('q2'))
+    const app = new Hono()
+    app.route('/', ledgerRoutes(file))
+    const before = (await (await app.request('/ledger')).json()) as { entries: QueryLogEntry[] }
+    expect(before.entries).toHaveLength(2)
+
+    const del = await app.request('/ledger', { method: 'DELETE' })
+    expect(del.status).toBe(200)
+    expect(((await del.json()) as { cleared: boolean }).cleared).toBe(true)
+
+    // the file itself is truncated — GET (which /ledger/stream replays on reconnect) is now empty
+    const after = (await (await app.request('/ledger')).json()) as { entries: QueryLogEntry[] }
+    expect(after.entries).toEqual([])
+  })
+
+  it('GRACEFUL: no ledger configured -> 200 no-op (never 500)', async () => {
+    const app = new Hono()
+    app.route('/', ledgerRoutes(undefined))
+    expect((await app.request('/ledger', { method: 'DELETE' })).status).toBe(200)
+  })
+})
+
 describe('GET /ledger/stream — SSE tail (TKT-427)', () => {
   it('replays existing entries, then emits a newly-appended one LIVE', async () => {
     seed(file, entry('q1'))

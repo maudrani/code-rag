@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { QueryLogEntry } from '../contract'
+import { clearLedger } from './ledgerClient'
 import { type LedgerStatus, type LedgerStreamOptions, openLedgerStream } from './ledgerStream'
 
 /** Cap the live feed so a long-running session never grows the DOM unbounded (newest kept). */
@@ -9,6 +10,8 @@ export interface UseLedgerStreamResult {
   /** newest-first, deduped by queryId, capped at MAX_ENTRIES. */
   entries: QueryLogEntry[]
   status: LedgerStatus
+  /** truncate the shared ledger on the server, then empty the local feed (survives a refresh). */
+  clear: () => Promise<void>
 }
 
 export interface UseLedgerStreamOptions extends LedgerStreamOptions {
@@ -51,5 +54,16 @@ export function useLedgerStream(options: UseLedgerStreamOptions = {}): UseLedger
     return () => handle.close()
   }, [baseUrl])
 
-  return { entries, status }
+  // Truncate the server ledger FIRST (so a refetch/refresh sees it empty), then drop the local feed.
+  // Order matters: clearing local first could let an in-flight tail re-add an entry before the truncate.
+  const clear = useCallback(async () => {
+    try {
+      await clearLedger(baseUrl)
+    } catch {
+      // best-effort — still clear the local view so the operator gets immediate feedback
+    }
+    setEntries([])
+  }, [baseUrl])
+
+  return { entries, status, clear }
 }

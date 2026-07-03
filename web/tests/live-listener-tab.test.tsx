@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MinimalEventSource } from '../src/clients/ledgerStream'
@@ -12,7 +12,10 @@ import {
   assertWithinPane,
 } from './_ui-verify'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 class FakeEventSource implements MinimalEventSource {
   onopen: (() => void) | null = null
@@ -127,6 +130,34 @@ describe('LiveListenerTab', () => {
     const files = screen.getByTestId('ledger-files')
     expect(within(files).getByText('source/core/Ky.ts')).toBeInTheDocument()
     expect(within(files).getByText('source/utils/delay.ts')).toBeInTheDocument()
+  })
+
+  it('"Clear feed" truncates the server ledger (DELETE /ledger) and empties the local feed', async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ cleared: true }) })
+    vi.stubGlobal('fetch', fetchSpy)
+    const fake = new FakeEventSource()
+    const user = userEvent.setup()
+    render(<LiveListenerTab createEventSource={() => fake} />)
+
+    act(() => {
+      fake.open()
+      fake.emit('entry', JSON.stringify(entry({ queryId: 'q-1' })))
+    })
+    expect(screen.getByRole('list', { name: /live query feed/i })).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('ledger-clear'))
+
+    // it truncates the SERVER file (so the reset survives a refresh), not just the local feed
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/ledger'),
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    // and the local feed empties → the waiting state returns
+    await waitFor(() =>
+      expect(screen.queryByRole('list', { name: /live query feed/i })).not.toBeInTheDocument(),
+    )
   })
 
   it('tags each entry with its L5 outcome: the model, "deterministic", or "refused · $0"', () => {

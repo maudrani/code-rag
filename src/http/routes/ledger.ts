@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { streamSSE } from 'hono/streaming'
-import { isConsumer, readLedger, readLedgerLines } from '../../consume/index.js'
+import { clearLedger, isConsumer, readLedger, readLedgerLines } from '../../consume/index.js'
 import type { Consumer } from '../../contracts/telemetry.js'
 
 /** how many recent entries a new /ledger/stream subscriber replays before tailing live. */
@@ -43,6 +43,14 @@ export function ledgerRoutes(
       opts.limit = n
     }
     return c.json({ entries: readLedger(ledgerPath, opts) })
+  })
+
+  // DELETE /ledger — truncate the shared ledger to start a fresh observability session. Truncating the
+  // FILE (not just the client feed) means the reset survives a browser refresh, since /ledger/stream
+  // replays the file on reconnect. A no-op (still 200) when no shared ledger is configured.
+  app.delete('/ledger', (c) => {
+    if (ledgerPath !== undefined) clearLedger(ledgerPath)
+    return c.json({ cleared: true })
   })
 
   // GET /ledger/stream — SSE: replay the recent entries, then tail new appends live (the

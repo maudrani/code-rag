@@ -18,6 +18,7 @@ export {
 } from './corpus.js'
 export type { LedgerLine, LedgerOutcome, LedgerSink } from './ledger.js'
 export {
+  clearLedger,
   JsonlLedgerSink,
   readLedger,
   readLedgerLines,
