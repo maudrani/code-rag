@@ -6,6 +6,7 @@ import { resolveCitation } from '../lib/resolveCitation'
 import { AnswerMarkdown } from './AnswerMarkdown'
 import { Citations } from './Citations'
 import { DecisionBadge } from './DecisionBadge'
+import { PromptInspector } from './PromptInspector'
 import { SourceViewer } from './SourceViewer'
 
 /**
@@ -43,6 +44,9 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         <AnswerMarkdown content={closeUnterminated(message.content)} />
       )}
       <Citations citations={citations} onOpen={openCitation} />
+      {/* Reveal the EXACT substrate + prompt the model received (answered turns only — a refused turn
+          never reached the LLM). This is the demo's guardrail moment: the model saw ONLY this. */}
+      {!refused && message.prompt && <PromptInspector prompt={message.prompt} />}
       {source && <SourceViewer chunk={source.chunk} citationSpan={source.span} />}
     </div>
   )

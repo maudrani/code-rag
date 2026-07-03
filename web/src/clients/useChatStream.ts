@@ -5,7 +5,14 @@
  * by message id so a superseded stream never writes into a newer turn.
  */
 import { useCallback, useRef, useState } from 'react'
-import type { Citation, GateDecision, RankedChunk, Turn, WireProjection } from '../contract'
+import type {
+  Citation,
+  GateDecision,
+  RankedChunk,
+  Turn,
+  WireProjection,
+  WirePrompt,
+} from '../contract'
 import { CONSUMER_HEADER, WEB_CONSUMER } from '../lib/config'
 import { isAbortError, type SseDoneUsage, streamSse } from './sseClient'
 
@@ -23,6 +30,9 @@ export interface ChatMessage {
   /** the original question + the L0-resolved standalone rewrite (WireProjection meta). */
   question?: string
   resolvedQuery?: string
+  /** the EXACT L5 prompt (substrate + messages) the model received — the WireProjection meta carries
+   *  it so the transcript can reveal what was actually sent (the guardrail made inspectable). */
+  prompt?: WirePrompt
   /** the L5 usage (tokens + estimated cost) from the SSE `done` frame. */
   usage?: SseDoneUsage
 }
@@ -154,6 +164,7 @@ export function useChatStream(options: UseChatStreamOptions = {}): UseChatStream
                 queryId: data.queryId,
                 question: data.question,
                 resolvedQuery: data.resolvedQuery,
+                prompt: data.prompt,
                 phase: band === 'refuse' ? 'refused' : 'streaming',
               })
             },

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import type { SSEStreamingApi } from 'hono/streaming'
 import { streamSSE } from 'hono/streaming'
+import { buildPrompt } from '../../answer/prompt.js'
 import type { Engine } from '../../contracts/engine.js'
 import type { QueryRequest, QuerySseEvent } from '../../contracts/wire.js'
 import { resolveConsumer } from '../consumer.js'
@@ -48,7 +49,13 @@ export function queryRoutes(engine: Engine): Hono {
       })
 
       try {
-        await writeEvent(stream, { event: 'meta', data: toWireProjection(projection) })
+        // Include the EXACT L5 prompt in meta: buildPrompt is pure + deterministic, so this is
+        // byte-identical to what engine.answer() sends below (same projection + history). It carries
+        // the assembled context the wire otherwise drops, so the chat can reveal the substrate.
+        await writeEvent(stream, {
+          event: 'meta',
+          data: { ...toWireProjection(projection), prompt: buildPrompt(projection, history) },
+        })
 
         if (projection.decision.band === 'answer') {
           for await (const chunk of engine.answer(projection, history)) {

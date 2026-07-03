@@ -38,6 +38,44 @@ describe('MessageBubble', () => {
     expect(screen.getByText(/not enough grounding/i)).toBeInTheDocument()
   })
 
+  it('reveals the EXACT substrate + prompt on toggle (answered turn carrying a prompt)', async () => {
+    const user = userEvent.setup()
+    const msg: ChatMessage = {
+      id: 5,
+      role: 'assistant',
+      content: 'answer',
+      phase: 'done',
+      decision: { groundingScore: 0.03, band: 'answer', tier: 'strong', model: 'm' },
+      prompt: {
+        system: 'Answer ONLY from the provided code context below.\n\nContext:\n// src/x.ts\ncode',
+        messages: [{ role: 'user', content: 'how does x work' }],
+      },
+    }
+    render(<MessageBubble message={msg} />)
+    const toggle = screen.getByTestId('prompt-inspector-toggle')
+    expect(toggle).toHaveTextContent(/show the exact prompt/i)
+    await user.click(toggle)
+    // the substrate (answer-only policy + assembled context) and the messages the API receives
+    expect(screen.getByTestId('prompt-system')).toHaveTextContent(
+      'Answer ONLY from the provided code',
+    )
+    expect(screen.getByTestId('prompt-system')).toHaveTextContent('Context:')
+    expect(screen.getByTestId('prompt-messages')).toHaveTextContent('user: how does x work')
+  })
+
+  it('does NOT show the prompt inspector on a refused turn — nothing was sent to the model', () => {
+    const msg: ChatMessage = {
+      id: 6,
+      role: 'assistant',
+      content: '',
+      phase: 'refused',
+      decision: { groundingScore: 0.006, band: 'refuse', tier: 'cheap', model: 'm' },
+      prompt: { system: 'x', messages: [{ role: 'user', content: 'q' }] },
+    }
+    render(<MessageBubble message={msg} />)
+    expect(screen.queryByTestId('prompt-inspector-toggle')).not.toBeInTheDocument()
+  })
+
   it('clicking a citation opens the in-app source code (joined from results)', async () => {
     const user = userEvent.setup()
     const msg: ChatMessage = {

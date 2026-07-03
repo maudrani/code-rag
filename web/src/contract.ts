@@ -41,6 +41,8 @@ export type {
   SearchResponse,
   TraceWsMessage,
   WireProjection,
+  WirePrompt,
+  WirePromptTurn,
 } from '../../src/contracts/wire'
 
 // ─────────────────────────────────────────────────────────────────────────────
