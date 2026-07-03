@@ -4,7 +4,13 @@
  * serializer (serializeProjection) → the two transports cannot drift.
  */
 export type { AskOptions, AskResult } from './actions.js'
-export { ask, buildEngine, resolveEngineConfig } from './actions.js'
+export {
+  ask,
+  assertDenseAskSafe,
+  buildEngine,
+  DENSE_COLD_FILE_CAP,
+  resolveEngineConfig,
+} from './actions.js'
 export type { ActiveCorpus } from './activeCorpus.js'
 export { activeCorpusFile, readActiveCorpus, writeActiveCorpus } from './activeCorpus.js'
 export type { CloneDeps, CorpusSourceOpts } from './corpus.js'

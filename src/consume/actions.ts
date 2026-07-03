@@ -1,6 +1,7 @@
 import type { Engine, EngineConfig } from '../contracts/engine.js'
 import type { Projection, Turn } from '../contracts/projection.js'
 import type { Consumer, Observable } from '../contracts/telemetry.js'
+import { walk } from '../ingest/walker.js'
 import { createEngine } from '../package/index.js'
 import { JsonlLedgerSink, resolveLedgerPath, withLedger } from './ledger.js'
 
@@ -42,6 +43,51 @@ function parseDense(raw: string | undefined): boolean | undefined {
   if (v === 'false' || v === '0' || v === 'off' || v === 'no') return false
   if (v === 'true' || v === '1' || v === 'on' || v === 'yes') return true
   return undefined
+}
+
+/**
+ * The heat guard's ceiling. Above this many files, a COLD dense index (the local MiniLM model runs once
+ * per chunk) can peg CPU + swap and FREEZE a laptop. A deliberate corpus — a small `--repo`, a
+ * `CORPUS_PATH` subdir — sits well under; the danger is the naive `code-rag ask` that self-indexes a
+ * whole repo. ky (~52 files) passes; a full repo (hundreds) is refused. Bypass: CODE_RAG_ALLOW_BIG_DENSE.
+ */
+export const DENSE_COLD_FILE_CAP = 200
+
+function truthy(raw: string | undefined): boolean {
+  const v = raw?.trim().toLowerCase()
+  return v === '1' || v === 'true' || v === 'on' || v === 'yes'
+}
+
+/**
+ * assertDenseAskSafe — refuse to COLD dense-embed a huge corpus, the footgun that freezes the machine:
+ * a bare `code-rag ask` from a repo root resolves the corpus to the WHOLE repo and, with the dense leg
+ * ON by default, cold-embeds every chunk. This walks the corpus FIRST (cheap — file discovery, no
+ * embedding) and throws an ACTIONABLE error above the cap. It is a no-op when the dense leg is off (no
+ * ONNX, no heat) or when explicitly overridden. `walkFn` is injected so it is unit-testable offline.
+ */
+export function assertDenseAskSafe(
+  corpusDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+  walkFn: (root: string) => { files: string[] } = walk,
+): void {
+  if (parseDense(env.CODE_RAG_DENSE) === false) return // dense off -> no ONNX -> heat-safe
+  if (truthy(env.CODE_RAG_ALLOW_BIG_DENSE)) return // explicit "this box can take it"
+  let fileCount: number
+  try {
+    fileCount = walkFn(corpusDir).files.length
+  } catch {
+    return // cannot walk (missing dir, etc.) -> let the engine surface the real error, don't mask it
+  }
+  if (fileCount <= DENSE_COLD_FILE_CAP) return
+  throw new Error(
+    `refusing to dense-embed ${fileCount} files from "${corpusDir}" cold — the local embedding model ` +
+      `runs per chunk and this can FREEZE the machine (the >${DENSE_COLD_FILE_CAP}-file whole-repo footgun).\n` +
+      `Pick one:\n` +
+      `  - a smaller corpus:            CORPUS_PATH=src/contracts code-rag ask "..."\n` +
+      `  - a specific repo:             code-rag ask --repo <git-url> "..."\n` +
+      `  - turn the dense leg off:      CODE_RAG_DENSE=false code-rag ask "..."   (BM25 + structural, heat-safe)\n` +
+      `  - override (you accept the load): CODE_RAG_ALLOW_BIG_DENSE=1 code-rag ask "..."`,
+  )
 }
 
 /**

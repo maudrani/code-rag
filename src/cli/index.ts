@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { buildEngine, isDirectRun } from '../consume/index.js'
+import { assertDenseAskSafe, buildEngine, isDirectRun } from '../consume/index.js'
 import { EXIT } from './errors.js'
 import { type RunDeps, run } from './run.js'
 
@@ -11,6 +11,9 @@ function realDeps(): RunDeps {
     stderr: process.stderr,
     env: process.env,
     isTTY: process.stdout.isTTY ?? false,
+    // the heat guard is wired ONLY in the shipped CLI (tests build their own deps + opt out), so a real
+    // `code-rag ask` can never cold-embed a whole repo by accident and freeze the machine.
+    assertDenseAskSafe,
   }
 }
 
