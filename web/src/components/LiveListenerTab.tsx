@@ -1,14 +1,11 @@
 import { Activity, ChevronDown, ChevronRight } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { CONSUMER_TONES, OUTCOME_TONES, type OutcomeTone, STATUS_TONES } from '@/lib/badgeTones'
 import { cn } from '@/lib/utils'
 import type { EventSourceFactory, LedgerStatus } from '../clients/ledgerStream'
-import { search } from '../clients/searchClient'
 import { useLedgerStream } from '../clients/useLedgerStream'
-import type { Chunk, Leg, QueryLogEntry, WireProjection } from '../contract'
+import type { Leg, QueryLogEntry } from '../contract'
 import { formatCost, formatInt, formatMs, formatScore } from './observability/formatters'
-import { ResultsList } from './ResultsList'
-import { SourceViewer } from './SourceViewer'
 
 const STATUS_TEXT: Record<LedgerStatus, string> = {
   connecting: 'Connecting…',
@@ -49,7 +46,10 @@ function llmOutcome(entry: QueryLogEntry): { label: string; tone: OutcomeTone } 
   if (entry.band === 'refuse' || entry.answered === false) {
     return { label: 'refused · $0', tone: 'refused' }
   }
-  if (entry.model) {
+  // The model badge shows ONLY when the LLM actually answered (answered === true). A search-only
+  // /query never invoked the LLM (answered stays undefined) even though the gate DECIDED a tier/model,
+  // so it reads `deterministic` — the ledger must not imply an API call that never happened.
+  if (entry.answered === true && entry.model) {
     return { label: entry.model, tone: 'model' }
   }
   return { label: 'deterministic', tone: 'deterministic' }
@@ -64,75 +64,12 @@ function Detail({ label, value }: { label: string; value: string }) {
   )
 }
 
-/**
- * Per-card result preview (TKT-531). Mounts ONLY while the card is expanded, so collapsing the card
- * unmounts it — the operator's "clear on close" (N open cards never accumulate N mounted result lists).
- * On mount it re-runs the card's query through the deterministic /search (same results, no backend or
- * contract change) and renders them reusing the manual-search result row. A mountedRef ignores a stale
- * in-flight response if the card is collapsed before it resolves (rapid expand/collapse). Every state.
- */
-function LedgerRowResults({ query, baseUrl }: { query: string; baseUrl: string }) {
-  const [status, setStatus] = useState<'loading' | 'error' | 'ready'>('loading')
-  const [projection, setProjection] = useState<WireProjection | null>(null)
-  const [source, setSource] = useState<Chunk | null>(null)
-  const mountedRef = useRef(true)
-
-  useEffect(() => {
-    mountedRef.current = true
-    setStatus('loading')
-    search(query, baseUrl)
-      .then((p) => {
-        if (mountedRef.current) {
-          setProjection(p)
-          setStatus('ready')
-        }
-      })
-      .catch(() => {
-        if (mountedRef.current) {
-          setStatus('error')
-        }
-      })
-    return () => {
-      mountedRef.current = false // collapse/unmount → ignore a late (stale) response
-    }
-  }, [query, baseUrl])
-
-  if (status === 'loading') {
-    return (
-      <div role="status" className="mt-2 text-xs text-muted-foreground">
-        Loading results…
-      </div>
-    )
-  }
-  if (status === 'error') {
-    return (
-      <div role="alert" className="mt-2 text-xs text-muted-foreground">
-        Couldn’t load results for this query.
-      </div>
-    )
-  }
-  const results = projection?.results ?? []
-  if (results.length === 0) {
-    return (
-      <p className="mt-2 text-xs text-muted-foreground">No results retrieved for this query.</p>
-    )
-  }
-  return (
-    <div
-      data-testid="ledger-row-results"
-      className="mt-2 max-h-64 overflow-auto rounded-md border border-border/60 p-2"
-    >
-      <ResultsList results={results} onOpen={(r) => setSource(r.chunk)} />
-      {source ? <SourceViewer chunk={source} /> : null}
-    </div>
-  )
-}
-
-function LedgerRow({ entry, baseUrl }: { entry: QueryLogEntry; baseUrl: string }) {
+function LedgerRow({ entry }: { entry: QueryLogEntry }) {
   const [open, setOpen] = useState(false)
   const Chevron = open ? ChevronDown : ChevronRight
   const outcome = llmOutcome(entry)
-  const isLlm = entry.band === 'answer' && Boolean(entry.model)
+  // Tier/tokens/cost details ONLY for a real LLM answer (answered === true) — not a search-only query.
+  const isLlm = entry.answered === true
   return (
     <li className="ledger-entry min-h-10 shrink-0 overflow-hidden rounded-md border border-border/60 bg-card">
       <button
@@ -194,8 +131,6 @@ function LedgerRow({ entry, baseUrl }: { entry: QueryLogEntry; baseUrl: string }
               />
             ))}
           </dl>
-          {/* the query's actual retrieved results — lazy on expand, unmounted on collapse (TKT-531) */}
-          <LedgerRowResults query={entry.query} baseUrl={baseUrl} />
         </div>
       ) : null}
     </li>
@@ -244,7 +179,7 @@ export function LiveListenerTab({
           aria-live="polite"
         >
           {entries.map((entry) => (
-            <LedgerRow key={entry.queryId} entry={entry} baseUrl={baseUrl} />
+            <LedgerRow key={entry.queryId} entry={entry} />
           ))}
         </ul>
       ) : status === 'closed' ? (

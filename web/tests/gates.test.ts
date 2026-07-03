@@ -184,14 +184,6 @@ const FRONTEND_GATES: Gate[] = [
     gateTest: 'web/tests/live-listener-tab.test.tsx::the feed OWNS its scroll',
   },
   {
-    id: 'frontend.live-card-results',
-    claim:
-      "a Live card lazily fetches + renders its query's results on expand and UNMOUNTS them on collapse (clear-on-close, no accumulation) (TKT-531)",
-    layer: 'frontend',
-    gateTest:
-      'web/tests/live-listener-tab.test.tsx::lazily fetches + renders the query results on expand',
-  },
-  {
     id: 'frontend.badge-contrast-coverage',
     claim:
       'every consumer chip + StatusPill state tone meets WCAG AA on the card surface — the contrast gap beyond OUTCOME_TONES is closed (TKT-526)',

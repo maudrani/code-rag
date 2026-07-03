@@ -19,9 +19,11 @@ import { repoLabel } from '../lib/repoLabel'
 export function RepoIngestBar({
   baseUrl = '',
   onIngested,
+  onClear,
 }: {
   baseUrl?: string
   onIngested?: (corpus: IngestResponse['activeCorpus']) => void
+  onClear?: () => void
 }) {
   const [url, setUrl] = useState('')
   const [status, setStatus] = useState<'idle' | 'submitting' | 'error'>('idle')
@@ -66,6 +68,17 @@ export function RepoIngestBar({
     }
   }
 
+  /** Clear (TKT-533): wipe the input + the active-corpus chip and reset the working session — App
+   *  remounts the tab views (fresh chat + a re-fetched corpus tree). Frontend state only; the server
+   *  keeps its current corpus until the next ingest. */
+  function onClearClick() {
+    setUrl('')
+    setCorpus(null)
+    setErrorMsg('')
+    setStatus('idle')
+    onClear?.()
+  }
+
   return (
     <div data-testid="repo-ingest-bar" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
       <form onSubmit={onSubmit} className="flex min-w-0 items-center gap-2">
@@ -99,6 +112,16 @@ export function RepoIngestBar({
           {submitting ? 'Indexing…' : 'Index'}
         </button>
       </form>
+
+      <button
+        type="button"
+        data-testid="repo-clear"
+        onClick={onClearClick}
+        disabled={submitting}
+        className="flex h-7 shrink-0 items-center gap-1 rounded border border-border bg-card px-2 text-xs font-medium text-muted-foreground hover:bg-accent/40 disabled:opacity-60"
+      >
+        Clear
+      </button>
 
       <span
         data-testid="active-corpus-chip"

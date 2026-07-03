@@ -22,7 +22,17 @@ export function App() {
   const [tab, setTab] = useState<Tab>('chat')
   const [queryId, setQueryId] = useState<string | null>(null)
   const [telemetry, setTelemetry] = useState<ChatTelemetry | null>(null)
+  const [sessionKey, setSessionKey] = useState(0)
   const trace = useTraceSocket(tab === 'chat' ? queryId : null, { baseUrl: WS_BASE })
+
+  // Reset the working session: remount the tab views (fresh chat + a re-fetched corpus tree/symbols)
+  // and drop the trace. Fired on a repo ingest (the corpus changed — this is what stops the tree from
+  // going stale after an ingest) and on the Clear action.
+  const resetSession = () => {
+    setQueryId(null)
+    setTelemetry(null)
+    setSessionKey((k) => k + 1)
+  }
 
   return (
     <main>
@@ -36,7 +46,7 @@ export function App() {
         </p>
         {/* FTR-5 P4: paste a git repo URL to index it in-app; the active-corpus chip shows what
             chat + search currently run over (TKT-533). */}
-        <RepoIngestBar baseUrl={API_BASE} />
+        <RepoIngestBar baseUrl={API_BASE} onIngested={resetSession} onClear={resetSession} />
         <nav className="tabs">
           <button
             type="button"
@@ -69,7 +79,7 @@ export function App() {
         </nav>
       </header>
       <div className="layout">
-        <div className="layout__main">
+        <div className="layout__main" key={sessionKey}>
           {tab === 'chat' ? (
             <ChatView
               options={{ baseUrl: API_BASE }}
