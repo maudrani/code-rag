@@ -33,6 +33,25 @@ describe('Dockerfile — multi-stage, glibc, non-root (TKT-430 / SC-2)', () => {
     expect(dockerfile).toContain('/health')
     expect(dockerfile).toContain('"dist/src/http/server.js"') // the compiled entry (no tsx)
   })
+
+  it('installs git (CODE_RAG_REPO clone) + pre-chowns the volume mounts for the non-root user', () => {
+    expect(dockerfile).toMatch(/apt-get install[^\n]*git/) // git in the runtime stage — CODE_RAG_REPO clone
+    // the named volumes (/index warm index, /data ledger) must init writable for `node`, else the
+    // non-root process hits "unable to open database file" — a real regression this locks against.
+    expect(dockerfile).toMatch(/chown node:node \/index \/data/)
+  })
+})
+
+describe('web/Dockerfile — the frontend builds in-image (T3)', () => {
+  const webDockerfile = read('web/Dockerfile')
+
+  it('is multi-stage: a Vite build with a VITE_API_BASE arg -> nginx serves the static bundle', () => {
+    expect(webDockerfile).toMatch(/FROM node:20-slim AS build/)
+    expect(webDockerfile).toMatch(/ARG VITE_API_BASE/) // the host-reachable API base, baked at build time
+    expect(webDockerfile).toContain('npm run build')
+    expect(webDockerfile).toMatch(/FROM nginx:alpine/)
+    expect(webDockerfile).toContain('/usr/share/nginx/html')
+  })
 })
 
 describe('docker-compose.yml — server (+ web) with the env contract (TKT-430 / SC-2)', () => {
@@ -46,9 +65,11 @@ describe('docker-compose.yml — server (+ web) with the env contract (TKT-430 /
     expect(compose).toContain('CODE_RAG_LEDGER')
   })
 
-  it('serves the web static + persists the shared ledger', () => {
+  it('builds the web IN-IMAGE (no manual pre-build) + persists the shared ledger', () => {
     expect(compose).toMatch(/web:/)
-    expect(compose).toContain('web/dist')
+    expect(compose).toMatch(/dockerfile:\s*web\/Dockerfile/) // web builds in-image, not a bind-mount
+    expect(compose).toContain('VITE_API_BASE') // baked so the host browser reaches the server
+    expect(compose).not.toContain('web/dist') // the old hand-built bind-mount coupling is gone
     expect(compose).toMatch(/ledger:/) // a named volume for the cross-consumer ledger
   })
 
