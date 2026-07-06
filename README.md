@@ -7,6 +7,29 @@ the code doesn't support one.
 
 Built for the NewPage FDE take-home (Option 2). The product name is a placeholder.
 
+> **Design decisions, trade-offs, engineering standards, the AI-assisted workflow, and the
+> productionization path → [`docs/DESIGN.md`](docs/DESIGN.md).** This README is the setup + tour.
+
+---
+
+## Screenshots
+
+| Chat — streamed answer + live L0→L5 trace | Manual search — deterministic, per-leg scores |
+|:---:|:---:|
+| [![Chat with trace](docs/screenshots/01-chat-with-trace.png)](docs/screenshots/01-chat-with-trace.png) | [![Manual search](docs/screenshots/02-manual-search.png)](docs/screenshots/02-manual-search.png) |
+| **Observability — per-layer L1→L5 telemetry + health** | **Live ledger — every consumer (web · cli · mcp), one feed** |
+| [![Observability](docs/screenshots/03-observability.png)](docs/screenshots/03-observability.png) | [![Live ledger](docs/screenshots/04-live-ledger.png)](docs/screenshots/04-live-ledger.png) |
+
+---
+
+## Walkthrough (video)
+
+A three-part screen recording — the running app + the design reasoning behind it:
+
+1. **[Design & the determinism gradient](https://cap.link/s4cjhs9avqchvmg)** — the architecture, and why the LLM is the last and smallest step.
+2. **[Retrieval, the refuse / cheap / strong gate, and observability](https://cap.link/6fqarv14pvrhhys)** — hybrid retrieval, cost/grounding routing, and the per-layer telemetry.
+3. **[One engine, many consumers](https://cap.link/r7f301f70hn796e)** — the same engine over the web, an MCP coding agent, and the CLI, all landing in one live ledger.
+
 ---
 
 ## The one idea: a determinism gradient
@@ -245,19 +268,9 @@ The whole pipeline is also usable in-process via the package (`createEngine`).
 
 ## How I used AI tools
 
-I built this with a **master / specialist multi-instance method**, not a single chat.
-One *master* instance owned the architecture, the shared contracts, and the
-integration seam (the membrane); five *specialist* instances each owned one layer and
-built it **test-first against the contracts, in parallel**. The contracts were the
-coordination surface — because everyone targets the same typed boundary, independent
-work integrates without a big-bang merge. The master serialized every commit, so the
-history stays a clean, attributed, per-layer narrative.
-
-- **Do:** make the typed contract the single coordination point; force TDD so the
-  determinism is *measured*, not asserted; keep humans/agents honest with a CI gate
-  no one can `--no-verify` past; write the eval and read it honestly.
-- **Don't:** let an orchestration framework hide the control flow; let an agent mark
-  work "done" without a green slice; ship a number you didn't measure.
+The multi-agent method I built this with (master / specialists / executor), the non-bypassable
+enforcement gates, and my do's & don'ts — in my own words →
+**[`docs/DESIGN.md`](docs/DESIGN.md)**.
 
 ---
 
