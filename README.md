@@ -26,9 +26,9 @@ Built for the NewPage FDE take-home (Option 2). The product name is a placeholde
 
 A three-part screen recording — the running app + the design reasoning behind it:
 
-1. **[Design & the determinism gradient](https://cap.link/s4cjhs9avqchvmg)** — the architecture, and why the LLM is the last and smallest step.
-2. **[Retrieval, the refuse / cheap / strong gate, and observability](https://cap.link/6fqarv14pvrhhys)** — hybrid retrieval, cost/grounding routing, and the per-layer telemetry.
-3. **[One engine, many consumers](https://cap.link/r7f301f70hn796e)** — the same engine over the web, an MCP coding agent, and the CLI, all landing in one live ledger.
+1. **[Design & the determinism gradient](https://drive.google.com/file/d/18Fds7x7lUTlrO6OVGKWUblwNYQ7LhYFL/view)** — the architecture, and why the LLM is the last and smallest step.
+2. **[Retrieval, the refuse / cheap / strong gate, and observability](https://drive.google.com/file/d/1zLEk_lygKQGOHei7opKwnBr6ljoQpl56/view)** — hybrid retrieval, cost/grounding routing, and the per-layer telemetry.
+3. **[One engine, many consumers](https://drive.google.com/file/d/1CUsS2cwJ0Za0xMfo99JoL8vFawe0qHt9/view)** — the same engine over the web, an MCP coding agent, and the CLI, all landing in one live ledger.
 
 ---
 
