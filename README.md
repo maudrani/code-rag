@@ -5,8 +5,6 @@ implemented, what an endpoint does, what depends on what — and get an answer
 **grounded in retrieved code, with clickable citations**, or an honest refusal when
 the code doesn't support one.
 
-Built for the NewPage FDE take-home (Option 2). The product name is a placeholder.
-
 > **Design decisions, trade-offs, engineering standards, the AI-assisted workflow, and the
 > productionization path → [`docs/DESIGN.md`](docs/DESIGN.md).** This README is the setup + tour.
 
